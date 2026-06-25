@@ -1,0 +1,12 @@
+.venv/
+.DS_Store
+.claude/
+*.npz
+*.csv
+*.save
+guide.md
+__pycache__/
+*.pyc
+*.pyo
+model/
+data/figures/
