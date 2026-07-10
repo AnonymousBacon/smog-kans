@@ -7,6 +7,6 @@
 guide.md
 __pycache__/
 *.pyc
-*.pyo
+*.pyo1
 model/
-data/figures/
+data/
