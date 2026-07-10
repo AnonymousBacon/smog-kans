@@ -12,7 +12,8 @@ import os
 CSV_PATH  = "/Users/baron/Documents/KAN testing/data/experiments_11e5_1hour_5mins_falsecombinatoricratelaws.csv"
 SAVE_PATH = "/Users/baron/Documents/KAN testing/predictions.npz"
 FIG_DIR   = "/Users/baron/Documents/KAN testing/figures/"
-CKPT_PATH = "/Users/baron/Documents/KAN testing/model/smog_kan"
+CKPT_PATH      = "/Users/baron/Documents/KAN testing/model/smog_kan"
+BEST_CKPT_PATH = "/Users/baron/Documents/KAN testing/model/smog_kan_best"
 
 os.makedirs(FIG_DIR, exist_ok=True)
 
@@ -25,6 +26,8 @@ STEPS_LBFGS          = 75
 LR_ADAM              = 1e-4
 BATCH_SIZE           = 1024
 LAMB                 = 0
+ADAM_CHUNK           = 200     # save best every N adam steps
+LBFGS_CHUNK          = 25      # save best every N lbfgs steps
 LOAD_FROM_CHECKPOINT = False   # set True to skip training and load saved model
 
 device = torch.device('cpu')
@@ -65,11 +68,11 @@ print(f"Species ({n_species}): {species_names}")
 print(f"X: {X_clean.shape}  |  D: {D_active.shape}")
 
 # distribution plots
-def plot_distributions(X_raw, Y_raw, names):
+def plot_distributions(X_log, Y_raw, names):
     configs = [
-        ("Raw (ppb)",      X_raw,                               Y_raw),
-        ("MinMaxScaler",   MinMaxScaler().fit_transform(X_raw),  MinMaxScaler().fit_transform(Y_raw)),
-        ("StandardScaler", StandardScaler().fit_transform(X_raw), StandardScaler().fit_transform(Y_raw)),
+        ("log1p (input)",  X_log,                                Y_raw),
+        ("MinMaxScaler",   MinMaxScaler().fit_transform(X_log),   MinMaxScaler().fit_transform(Y_raw)),
+        ("StandardScaler", StandardScaler().fit_transform(X_log), StandardScaler().fit_transform(Y_raw)),
     ]
     fig, axes = plt.subplots(3, 2, figsize=(16, 13))
     fig.suptitle("Input/Output Distributions: Raw vs Scalers", fontsize=13)
@@ -77,11 +80,16 @@ def plot_distributions(X_raw, Y_raw, names):
     for row, (label, X_s, Y_s) in enumerate(configs):
         for col, (data, title) in enumerate([(X_s, f"X — {label}"), (Y_s, f"Y (tendencies) — {label}")]):
             ax = axes[row, col]
-            ax.boxplot(data, labels=names, patch_artist=True,
+            ax.boxplot(data, tick_labels=names, patch_artist=True,
                        flierprops=dict(marker='.', markersize=1, alpha=0.3))
             ax.set_title(title)
             ax.set_xticklabels(names, rotation=45, ha='right', fontsize=7)
             ax.set_ylabel("Value")
+            if row == 2:
+                p1, p99 = np.percentile(data, [1, 99])
+                pad = (p99 - p1) * 0.5
+                ax.set_ylim(p1 - pad, p99 + pad)
+                ax.set_title(f"{title} (axis clipped to 1–99th pct)")
 
     plt.tight_layout()
     plt.savefig(FIG_DIR + "distributions.png", dpi=150, bbox_inches="tight")
@@ -122,71 +130,90 @@ def make_model():
 def loss_key(results):
     return 'test_loss' if 'test_loss' in results else 'val_loss'
 
+def fit_chunked(model, dataset, opt, total_steps, chunk_size, best_val, **kwargs):
+    train_hist, test_hist = [], []
+    steps_done = 0
+    while steps_done < total_steps:
+        s = min(chunk_size, total_steps - steps_done)
+        res = model.fit(dataset, opt=opt, steps=s, **kwargs)
+        tk = loss_key(res)
+        train_hist += res['train_loss']
+        test_hist  += res[tk]
+        val = res[tk][-1]
+        if val < best_val:
+            best_val = val
+            model.saveckpt(BEST_CKPT_PATH)
+            print(f"  best val loss: {val:.6f} → saved")
+        steps_done += s
+    return train_hist, test_hist, best_val
+
 if LOAD_FROM_CHECKPOINT:
     print(f"\nLoading checkpoint: {CKPT_PATH}")
-    model_both  = KAN.loadckpt(CKPT_PATH)
-    skip_plots  = True
+    model = KAN.loadckpt(CKPT_PATH)
 else:
-    print("\n── Adam only ──")
-    model_adam  = make_model()
-    res_adam    = model_adam.fit(dataset, opt="Adam",  steps=STEPS_ADAM,  lamb=LAMB,
-                                 lr=LR_ADAM, batch=BATCH_SIZE)
+    model    = make_model()
+    best_val = float('inf')
 
-    print("\n── LBFGS only ──")
-    model_lbfgs = make_model()
-    res_lbfgs   = model_lbfgs.fit(dataset, opt="LBFGS", steps=STEPS_LBFGS, lamb=LAMB, batch=-1)
+    tl, vl, best_val = fit_chunked(model, dataset, "Adam", STEPS_ADAM, ADAM_CHUNK,
+                                   best_val, lamb=LAMB, lr=LR_ADAM, batch=BATCH_SIZE)
+    adam_transition = len(tl)
 
-    print("\n── Adam → LBFGS ──")
-    model_both  = make_model()
-    r1 = model_both.fit(dataset, opt="Adam",  steps=STEPS_ADAM,  lamb=LAMB,
-                        lr=LR_ADAM, batch=BATCH_SIZE)
-    r2 = model_both.fit(dataset, opt="LBFGS", steps=STEPS_LBFGS, lamb=LAMB, batch=-1)
-
-    adam_transition = len(r1['train_loss'])
-    res_both = {
-        'train_loss': r1['train_loss'] + r2['train_loss'],
-        'test_loss':  r1[loss_key(r1)] + r2[loss_key(r2)],
-    }
+    tl2, vl2, best_val = fit_chunked(model, dataset, "LBFGS", STEPS_LBFGS, LBFGS_CHUNK,
+                                     best_val, lamb=LAMB, batch=-1)
+    train_loss = tl + tl2
+    test_loss  = vl + vl2
 
     # grid refinement: 3 → 10 → 20
     refine_transitions = []
     for new_grid in [10, 20]:
-        refine_transitions.append(len(res_both['train_loss']))
+        refine_transitions.append(len(train_loss))
         print(f"\n── refine grid → {new_grid} ──")
-        model_both = model_both.refine(new_grid)
-        r_ref = model_both.fit(dataset, opt="LBFGS", steps=100, lamb=0, batch=-1)
-        res_both['train_loss'] += r_ref['train_loss']
-        res_both['test_loss']  += r_ref[loss_key(r_ref)]
+        model.save_act = True
+        with torch.no_grad():
+            model(dataset['train_input'])
+        model = model.refine(new_grid)
+        tl_r, vl_r, best_val = fit_chunked(model, dataset, "LBFGS", 100, LBFGS_CHUNK,
+                                            best_val, lamb=0, batch=-1)
+        train_loss += tl_r
+        test_loss  += vl_r
 
-    model_both.saveckpt(CKPT_PATH)
+    model.saveckpt(CKPT_PATH)
     print(f"Checkpoint saved → {CKPT_PATH}_*")
     print("To skip retraining next run: set LOAD_FROM_CHECKPOINT = True")
-    skip_plots = False
+
+    np.savez(
+        "/Users/baron/Documents/KAN testing/model/loss_history.npz",
+        train_loss=train_loss,
+        test_loss=test_loss,
+        adam_transition=adam_transition,
+        refine_transitions=refine_transitions,
+    )
 
 # loss curves
-if not skip_plots:
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-    fig.suptitle("Train vs Test Loss (log scale) — Overfitting Check", fontsize=13)
+_hist_path = "/Users/baron/Documents/KAN testing/model/loss_history.npz"
+if os.path.exists(_hist_path):
+    _h = np.load(_hist_path)
+    train_loss       = list(_h["train_loss"])
+    test_loss        = list(_h["test_loss"])
+    adam_transition  = int(_h["adam_transition"])
+    refine_transitions = list(_h["refine_transitions"])
 
-    for ax, train, test, title, vlines in [
-        (axes[0], res_adam['train_loss'],  res_adam[loss_key(res_adam)],   "Adam Only",              []),
-        (axes[1], res_lbfgs['train_loss'], res_lbfgs[loss_key(res_lbfgs)], "LBFGS Only",             []),
-        (axes[2], res_both['train_loss'],  res_both['test_loss'],           "Adam → LBFGS + refine",
-         [(adam_transition, 'LBFGS')] + [(s, f'grid→{g}') for s, g in zip(refine_transitions, [10, 20])]),
-    ]:
-        ax.semilogy(train, label='train')
-        ax.semilogy(test,  label='test', linestyle='--')
-        for x, label in vlines:
-            ax.axvline(x=x, color='gray', linestyle=':', linewidth=1, label=label)
-        ax.set_title(title)
-        ax.set_xlabel("Steps")
-        ax.set_ylabel("MSE Loss")
-        ax.legend(fontsize=7)
-
+    fig, ax = plt.subplots(figsize=(10, 5))
+    fig.suptitle("Train vs Test Loss (log scale)", fontsize=13)
+    ax.semilogy(train_loss, label='train')
+    ax.semilogy(test_loss,  label='test', linestyle='--')
+    ax.axvline(x=adam_transition, color='gray', linestyle=':', linewidth=1, label='Adam→LBFGS')
+    for step, g in zip(refine_transitions, [10, 20]):
+        ax.axvline(x=step, color='orange', linestyle=':', linewidth=1, label=f'grid→{g}')
+    ax.set_xlabel("Steps")
+    ax.set_ylabel("MSE Loss")
+    ax.legend(fontsize=7)
     plt.tight_layout()
     plt.savefig(FIG_DIR + "loss_curves.png", dpi=150, bbox_inches="tight")
     plt.close()
     print("Saved: figures/loss_curves.png")
+else:
+    print("No loss history found — run training first to generate loss_curves.png")
 
 # evaluate
 def eval_model(model):
@@ -198,44 +225,48 @@ def eval_model(model):
     rmse_per  = np.sqrt(np.mean((preds_ppb - actual) ** 2, axis=0))
     return mse, rmse_per, preds_ppb, actual
 
-mse_both, rmse_both, preds_both, actual_ppb = eval_model(model_both)
+mse, rmse_per, preds, actual_ppb = eval_model(model)
 
-if not skip_plots:
-    mse_adam,  rmse_adam,  _, _ = eval_model(model_adam)
-    mse_lbfgs, rmse_lbfgs, _, _ = eval_model(model_lbfgs)
+print(f"\nTest MSE: {mse:.6f} | Mean RMSE: {rmse_per.mean():.4f} ppb/step")
+for name, rmse in zip(species_names, rmse_per):
+    print(f"  {name:10s}: {rmse:.4f} ppb/step")
 
-    print(f"\n{'Optimizer':<15} {'Test MSE':>10} {'Mean RMSE (ppb)':>16}")
-    print("-" * 44)
-    for name, mse, rmse in [
-        ("Adam",       mse_adam,  rmse_adam),
-        ("LBFGS",      mse_lbfgs, rmse_lbfgs),
-        ("Adam→LBFGS", mse_both,  rmse_both),
-    ]:
-        print(f"{name:<15} {mse:>10.6f} {rmse.mean():>16.4f}")
+x, w = np.arange(n_species), 0.4
+fig, ax = plt.subplots(figsize=(13, 5))
+ax.bar(x, rmse_per, w)
+ax.set_xticks(x)
+ax.set_xticklabels(species_names, rotation=45, ha='right')
+ax.set_ylabel("RMSE (ppb/step)")
+ax.set_title("Per-Species RMSE")
+plt.tight_layout()
+plt.savefig(FIG_DIR + "rmse.png", dpi=150, bbox_inches="tight")
+plt.close()
+print("Saved: figures/rmse.png")
 
-    x, w = np.arange(n_species), 0.25
-    fig, ax = plt.subplots(figsize=(13, 5))
-    ax.bar(x - w, rmse_adam,  w, label='Adam')
-    ax.bar(x,     rmse_lbfgs, w, label='LBFGS')
-    ax.bar(x + w, rmse_both,  w, label='Adam→LBFGS')
-    ax.set_xticks(x)
-    ax.set_xticklabels(species_names, rotation=45, ha='right')
-    ax.set_ylabel("RMSE (ppb/step)")
-    ax.set_title("Per-Species RMSE: Optimizer Comparison")
-    ax.legend()
-    plt.tight_layout()
-    plt.savefig(FIG_DIR + "rmse_comparison.png", dpi=150, bbox_inches="tight")
-    plt.close()
-    print("Saved: figures/rmse_comparison.png")
-else:
-    print(f"\nTest MSE: {mse_both:.6f} | Mean RMSE: {rmse_both.mean():.4f} ppb/step")
-    for name, rmse in zip(species_names, rmse_both):
-        print(f"  {name:10s}: {rmse:.4f} ppb/step")
+# scatter: predicted vs actual per species
+n_cols = 4
+n_rows = -(-n_species // n_cols)
+fig, axes = plt.subplots(n_rows, n_cols, figsize=(14, n_rows * 3))
+axes = axes.flatten()
+for i, (name, ax) in enumerate(zip(species_names, axes)):
+    ax.scatter(actual_ppb[:, i], preds[:, i], s=1, alpha=0.3)
+    lims = [min(actual_ppb[:, i].min(), preds[:, i].min()),
+            max(actual_ppb[:, i].max(), preds[:, i].max())]
+    ax.plot(lims, lims, 'r--', linewidth=0.8)
+    ax.set_title(name, fontsize=9)
+    ax.set_xlabel("actual")
+    ax.set_ylabel("predicted")
+for ax in axes[n_species:]:
+    ax.set_visible(False)
+plt.tight_layout()
+plt.savefig(FIG_DIR + "scatter.png", dpi=150, bbox_inches="tight")
+plt.close()
+print("Saved: figures/scatter.png")
 
 # save predictions and KAN graph
-np.savez(SAVE_PATH, predictions=preds_both, actuals=actual_ppb, species=np.array(species_names))
+np.savez(SAVE_PATH, predictions=preds, actuals=actual_ppb, species=np.array(species_names))
 print(f"Saved predictions to {SAVE_PATH}")
 
-model_both.plot(in_vars=species_names, out_vars=species_names)
+model.plot(in_vars=species_names, out_vars=species_names)
 plt.savefig("/Users/baron/Desktop/kan_graph.png", dpi=150, bbox_inches="tight")
 print("Saved KAN graph to Desktop/kan_graph.png")
