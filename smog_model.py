@@ -1,4 +1,6 @@
+import sys
 import functools
+sys.stdout.reconfigure(encoding="utf-8")
 print = functools.partial(print, flush=True)
 
 import pandas as pd
@@ -8,15 +10,23 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
+import kan.MultKAN
 from kan import KAN
 import os
+
+_multkan_module = sys.modules["kan.MultKAN"]
+class _SilentTqdm(_multkan_module.tqdm):
+    def __init__(self, *args, **kwargs):
+        kwargs["disable"] = True
+        super().__init__(*args, **kwargs)
+_multkan_module.tqdm = _SilentTqdm
 
 # paths
 CSV_PATH  = "C:/kan-project/experiments_11e5_1hour_5mins_falsecombinatoricratelaws.csv"
 SAVE_PATH = "C:/kan-project/predictions.npz"
 FIG_DIR   = "C:/kan-project/figures/"
-CKPT_PATH      = "C:/kan-project/model/smog_kan"
-BEST_CKPT_PATH = "C:/kan-project/model/smog_kan_best"
+CKPT_PATH      = "C:/kan-project/model/smog_kan16_3x16"
+BEST_CKPT_PATH = "C:/kan-project/model/smog_kan16_3x16_best"
 
 os.makedirs(FIG_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(CKPT_PATH), exist_ok=True)
@@ -25,10 +35,14 @@ os.makedirs(os.path.dirname(CKPT_PATH), exist_ok=True)
 N_EXPS               = 10000
 TRAIN_SPLIT          = 0.8
 SEED                 = 42
-STEPS_LBFGS          = 2002
+STEPS_LBFGS          = 1500
 LAMB                 = 0
-LBFGS_CHUNK          = 25      # save best every N lbfgs steps
-LOAD_FROM_CHECKPOINT = True   # set True to skip training and load saved model
+LBFGS_CHUNK          = 25      
+PRINT_EVERY          = 100     #console printing fix for verbosity
+GRID_STAGES          = [3, 10, 20]  # coarse -> fine spline res, KAN-only
+TRY_SYMBOLIC         = True   # snap well-fit splines to exact formulas, compares before/after
+SYMBOLIC_R2_MIN       = 0.9    # only snap edges that already fit this well
+LOAD_FROM_CHECKPOINT = False
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -40,7 +54,7 @@ assert all(df.columns[2:].str.endswith("[ppb]")), (
     "Unexpected non-ppb columns after index 2 — check CSV structure"
 )
 
-ignore        = ["H2O", "O2", "HNO3", "CO", "H2"]
+ignore        = []  # need all 16 species for atom conservation later
 active_cols   = [c for c in df.columns if c.split(" ")[0] not in ignore and c.endswith("[ppb]")]
 species_names = [c.split(" ")[0] for c in active_cols]
 all_ppb_cols  = list(df.iloc[:, 2:].columns)
@@ -48,7 +62,6 @@ active_indices = [all_ppb_cols.index(c) for c in active_cols]
 
 C_active = df[active_cols].values
 C_all    = df.iloc[:, 2:].values
-
 N, n_pts, n_steps = df.shape[0], 13, 12
 
 assert df.shape[0] == n_pts * N_EXPS, (
@@ -118,11 +131,10 @@ dataset = {
 print(f"train: {dataset['train_input'].shape} | test: {dataset['test_input'].shape}")
 
 # training
-KAN_WIDTH = [n_species, 16, 16, n_species]
+KAN_WIDTH = [n_species, 16, 16, 16, n_species]
 print(f"\nArchitecture: {KAN_WIDTH}")
 
-# per-species loss weighting — OH's tendency is tiny in magnitude relative to
-# other species, so plain MSE barely penalizes getting it wrong; upweight it.
+# per-species loss weighting
 SPECIES_WEIGHTS = {"OH": 2.5}
 species_weight = torch.tensor(
     [SPECIES_WEIGHTS.get(name, 1.0) for name in species_names],
@@ -132,16 +144,10 @@ species_weight = torch.tensor(
 def weighted_mse(pred, target):
     return torch.mean(species_weight * (pred - target) ** 2)
 
-def make_model():
-    torch.manual_seed(SEED)
-    m = KAN(width=KAN_WIDTH, grid=5, k=3, seed=SEED, device=device, auto_save=False, grid_eps=0.0)
-    m.speed()
-    return m
-
 def loss_key(results):
     return 'test_loss' if 'test_loss' in results else 'val_loss'
 
-def fit_chunked(model, dataset, opt, total_steps, chunk_size, best_val, **kwargs):
+def fit_chunked(model, dataset, opt, total_steps, chunk_size, best_val, print_every=PRINT_EVERY, **kwargs):
     train_hist, test_hist = [], []
     steps_done = 0
     while steps_done < total_steps:
@@ -151,22 +157,40 @@ def fit_chunked(model, dataset, opt, total_steps, chunk_size, best_val, **kwargs
         train_hist += res['train_loss']
         test_hist  += res[tk]
         val = res[tk][-1]
+        steps_done += s
         if val < best_val:
             best_val = val
             model.saveckpt(BEST_CKPT_PATH)
-            print(f"  best val loss: {val:.6f} → saved")
-        steps_done += s
+        if steps_done % print_every == 0 or steps_done == total_steps:
+            print(f"step {steps_done:5d}/{total_steps}  train_loss={res['train_loss'][-1]:.6f}  test_loss={val:.6f}")
     return train_hist, test_hist, best_val
 
 if LOAD_FROM_CHECKPOINT:
     print(f"\nLoading checkpoint: {CKPT_PATH}")
     model = KAN.loadckpt(CKPT_PATH)
 else:
-    model    = make_model()
     best_val = float('inf')
+    train_loss, test_loss = [], []
+    steps_per_stage = STEPS_LBFGS // len(GRID_STAGES)
 
-    train_loss, test_loss, best_val = fit_chunked(model, dataset, "LBFGS", STEPS_LBFGS, LBFGS_CHUNK,
-                                                  best_val, lamb=LAMB, batch=-1, loss_fn=weighted_mse)
+    for stage_i, grid in enumerate(GRID_STAGES):
+        if stage_i == 0:
+            torch.manual_seed(SEED)
+            model = KAN(width=KAN_WIDTH, grid=grid, k=3, seed=SEED, device=device, auto_save=False, grid_eps=0.0)
+        else:
+            refine_idx = torch.randperm(dataset['train_input'].shape[0])[:8192]
+            model.save_act = True
+            model(dataset['train_input'][refine_idx])
+            model = model.refine(grid)
+        model.speed()
+
+        print(f"\nGrid stage {stage_i + 1}/{len(GRID_STAGES)}: grid={grid} ({steps_per_stage} steps)")
+        stage_train, stage_test, best_val = fit_chunked(
+            model, dataset, "LBFGS", steps_per_stage, LBFGS_CHUNK,
+            best_val, lamb=LAMB, batch=-1, update_grid=False, loss_fn=weighted_mse,
+        )
+        train_loss += stage_train
+        test_loss  += stage_test
 
     model.saveckpt(CKPT_PATH)
     print(f"Checkpoint saved → {CKPT_PATH}_*")
@@ -186,11 +210,11 @@ if os.path.exists(_hist_path):
     test_loss  = list(_h["test_loss"])
 
     fig, ax = plt.subplots(figsize=(10, 5))
-    fig.suptitle("Train vs Test Loss (log scale)", fontsize=13)
+    fig.suptitle("Train vs Test Loss (RMSE, log scale)", fontsize=13)
     ax.semilogy(train_loss, label='train')
     ax.semilogy(test_loss,  label='test', linestyle='--')
     ax.set_xlabel("Steps")
-    ax.set_ylabel("MSE Loss")
+    ax.set_ylabel("RMSE Loss")
     ax.legend(fontsize=7)
     plt.tight_layout()
     plt.savefig(FIG_DIR + "loss_curves.png", dpi=150, bbox_inches="tight")
@@ -215,8 +239,18 @@ print(f"\nTest MSE: {mse:.6f} | Mean RMSE: {rmse_per.mean():.4f} ppb/step")
 for name, rmse in zip(species_names, rmse_per):
     print(f"  {name:10s}: {rmse:.4f} ppb/step")
 
-# pseudo-steady-state check: reconstruct C(t+1) = C_input(t) + predicted tendency,
-# and see how often that violates the physical constraint that concentrations >= 0
+if TRY_SYMBOLIC and np.isnan(mse):
+    print("\nSkipping auto_symbolic: model is already producing NaN, retrain first")
+elif TRY_SYMBOLIC:
+    rmse_before = rmse_per.copy()
+    model.auto_symbolic(r2_threshold=SYMBOLIC_R2_MIN)
+    mse, rmse_per, preds, actual_ppb = eval_model(model)
+    print(f"\nAfter auto_symbolic: Test MSE: {mse:.6f} | Mean RMSE: {rmse_per.mean():.4f} ppb/step")
+    for name, before, after in zip(species_names, rmse_before, rmse_per):
+        flag = "  worse" if after > before else ""
+        print(f"  {name:10s}: {before:.4f} -> {after:.4f} ppb/step{flag}")
+
+# pseudo-steady-state check
 C_input_test  = X_clean[n_train:]
 C_next_pred   = C_input_test + preds
 C_next_actual = C_input_test + actual_ppb
@@ -290,12 +324,17 @@ print(f"Saved predictions to {SAVE_PATH}")
 
 model.save_act = True
 with torch.no_grad():
-    model(dataset['train_input'])
+    plot_idx = torch.randperm(dataset['train_input'].shape[0])[:8192]
+    model(dataset['train_input'][plot_idx])
 
-# pykan's label font size (40*scale*varscale) and label spacing (fig_width/n_species)
-# both scale with `scale`, so only varscale (not scale) can prevent label overlap
 max_label_len = max(len(s) for s in species_names)
 label_varscale = min(1.0, max(0.25, 19 / (n_species * max_label_len)))
-model.plot(in_vars=species_names, out_vars=species_names, scale=1.0, varscale=label_varscale)
-plt.savefig("C:/kan-project/kan_graph.png", dpi=200, bbox_inches="tight")
-print("Saved KAN graph to C:/kan-project/kan_graph.png")
+
+try:
+    model.plot(in_vars=species_names, out_vars=species_names, scale=1.0, varscale=label_varscale)
+    plt.savefig("C:/kan-project/kan_graph.png", dpi=200, bbox_inches="tight")
+    print("Saved KAN graph to C:/kan-project/kan_graph.png")
+except MemoryError as e:
+    print(f"Skipped KAN graph: ran out of memory compositing it ({e}). "
+          f"This is a pykan scaling limit at this network width, not a training/eval problem — "
+          f"everything else already saved successfully.")
