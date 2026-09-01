@@ -12,14 +12,15 @@ import time
 from xgboost import XGBRegressor
 from sklearn.multioutput import MultiOutputRegressor
 
-FIG_DIR    = "C:/kan-project/figures/"
-SPLITS     = "C:/kan-project/model/splits.npz"
-SCALER_Y   = "C:/kan-project/model/scalerY.pkl"
-KAN_PREDS  = "C:/kan-project/predictions.npz"
+BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
+FIG_DIR    = os.path.join(BASE_DIR, "figures", "")
+SPLITS     = os.path.join(BASE_DIR, "model", "splits.npz")
+SCALER_Y   = os.path.join(BASE_DIR, "model", "scalerY.pkl")
+KAN_PREDS  = os.path.join(BASE_DIR, "predictions.npz")
 SEED       = 42
 os.makedirs(FIG_DIR, exist_ok=True)
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu')   # no cuda on mac; mps has incomplete op coverage for pykan/lbfgs
 print(f"device: {device}")
 
 # load preprocessed splits saved by smog_model.py

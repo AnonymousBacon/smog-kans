@@ -14,14 +14,17 @@ from kan import KAN
 import joblib
 import os
 
-# paths
-CSV_PATH  = "C:/kan-project/experiments_11e5_1hour_5mins_falsecombinatoricratelaws.csv"
-SAVE_PATH = "C:/kan-project/predictions.npz"
-FIG_DIR   = "C:/kan-project/figures/"
-CKPT_PATH      = "C:/kan-project/model/smog_kan"
-BEST_CKPT_PATH = "C:/kan-project/model/smog_kan_best"
-SPLITS_PATH    = "C:/kan-project/model/splits.npz"
-SCALER_Y_PATH  = "C:/kan-project/model/scalerY.pkl"
+# paths — relative to this script's location, so it runs regardless of clone path
+BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
+CSV_PATH  = os.path.join(BASE_DIR, "data", "experiments_11e5_1hour_5mins_falsecombinatoricratelaws.csv")
+SAVE_PATH = os.path.join(BASE_DIR, "predictions.npz")
+FIG_DIR   = os.path.join(BASE_DIR, "figures", "")
+CKPT_PATH      = os.path.join(BASE_DIR, "model", "smog_kan")
+BEST_CKPT_PATH = os.path.join(BASE_DIR, "model", "smog_kan_best")
+SPLITS_PATH    = os.path.join(BASE_DIR, "model", "splits.npz")
+SCALER_Y_PATH  = os.path.join(BASE_DIR, "model", "scalerY.pkl")
+HIST_PATH      = os.path.join(BASE_DIR, "model", "loss_history.npz")
+GRAPH_PATH     = os.path.join(BASE_DIR, "kan_graph.png")
 
 os.makedirs(FIG_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(CKPT_PATH), exist_ok=True)
@@ -30,13 +33,24 @@ os.makedirs(os.path.dirname(CKPT_PATH), exist_ok=True)
 N_EXPS               = 10000
 TRAIN_SPLIT          = 0.8
 SEED                 = 42
-STEPS_LBFGS          = 2002
-LAMB                 = 0
 LBFGS_CHUNK          = 25      # save best every N lbfgs steps
 PRINT_EVERY          = 100     # periodic progress print during long lbfgs runs
 LOAD_FROM_CHECKPOINT = False   # set True to skip training and load saved model
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# training pipeline: warmup (fast) -> sparsify -> prune -> grid refine
+WARMUP_STEPS    = 1200   # speed mode, no sparsification penalty
+SPARSIFY_STEPS  = 300    # save_act on, l1+entropy penalty to concentrate signal onto few edges
+SPARSIFY_LAMB   = 1e-3
+PRUNE_NODE_TH   = 1e-2
+PRUNE_EDGE_TH   = 3e-2
+REFINE_GRIDS    = [10, 20]   # spline resolution stages after pruning
+REFINE_STEPS    = 250        # lbfgs steps per refine stage
+
+# symbolic fitting: snap well-fit edges to closed-form functions
+SYMBOLIC_R2_MIN     = 0.9
+SYMBOLIC_FIT_STEPS  = 200   # retune affine constants after snapping
+
+device = torch.device('cpu')   # no cuda on mac; mps has incomplete op coverage for pykan/lbfgs
 
 # load and clean
 df = pd.read_csv(CSV_PATH, nrows=13 * N_EXPS)
@@ -124,7 +138,7 @@ dataset = {
 print(f"train: {dataset['train_input'].shape} | test: {dataset['test_input'].shape}")
 
 # training
-KAN_WIDTH = [n_species, 16, 16, n_species]
+KAN_WIDTH = [n_species, 16, 16, 16, n_species]
 print(f"\nArchitecture: {KAN_WIDTH}")
 
 # per-species loss weighting
@@ -182,24 +196,69 @@ if LOAD_FROM_CHECKPOINT:
 else:
     model    = make_model()
     best_val = float('inf')
+    train_loss, test_loss = [], []
 
-    train_loss, test_loss, best_val = fit_chunked(model, dataset, "LBFGS", STEPS_LBFGS, LBFGS_CHUNK,
-                                                  best_val, lamb=LAMB, batch=-1, loss_fn=weighted_mse)
+    # warmup: fast training in speed mode, no sparsification yet
+    print(f"\nWarmup: {WARMUP_STEPS} steps (speed mode)")
+    stage_train, stage_test, best_val = fit_chunked(
+        model, dataset, "LBFGS", WARMUP_STEPS, LBFGS_CHUNK,
+        best_val, lamb=0, batch=-1, loss_fn=weighted_mse,
+    )
+    train_loss += stage_train
+    test_loss  += stage_test
+
+    # sparsify: leave speed mode so activations get cached for the l1/entropy
+    # penalty. also re-enable the symbolic branch here for good, since speed()
+    # turns it off permanently — if left off, auto_symbolic's snapped edges
+    # would silently contribute nothing to the forward pass later on
+    model.save_act         = True
+    model.symbolic_enabled = True
+    print(f"\nSparsifying: {SPARSIFY_STEPS} steps (lamb={SPARSIFY_LAMB})")
+    stage_train, stage_test, best_val = fit_chunked(
+        model, dataset, "LBFGS", SPARSIFY_STEPS, LBFGS_CHUNK,
+        best_val, lamb=SPARSIFY_LAMB, batch=-1, loss_fn=weighted_mse,
+    )
+    train_loss += stage_train
+    test_loss  += stage_test
+
+    # prune dead nodes/edges, then drop activation caching again for speed
+    print(f"\nPruning (node_th={PRUNE_NODE_TH}, edge_th={PRUNE_EDGE_TH})")
+    print(f"  width before: {model.width}")
+    model = model.prune(node_th=PRUNE_NODE_TH, edge_th=PRUNE_EDGE_TH)
+    print(f"  width after:  {model.width}")
+    model.save_act  = False
+    model.auto_save = False
+
+    # grid refinement: train the pruned network at increasing spline
+    # resolution, retraining after each refine step
+    for grid in REFINE_GRIDS:
+        refine_idx = torch.randperm(dataset['train_input'].shape[0])[:8192]
+        model.save_act = True
+        model(dataset['train_input'][refine_idx])
+        model = model.refine(grid)
+        model.save_act = False   # refine() resets save_act to its default (True)
+
+        print(f"\nGrid refine: grid={grid} ({REFINE_STEPS} steps)")
+        stage_train, stage_test, best_val = fit_chunked(
+            model, dataset, "LBFGS", REFINE_STEPS, LBFGS_CHUNK,
+            best_val, lamb=0, batch=-1, loss_fn=weighted_mse,
+        )
+        train_loss += stage_train
+        test_loss  += stage_test
 
     model.saveckpt(CKPT_PATH)
     print(f"Checkpoint saved → {CKPT_PATH}_*")
     print("To skip retraining next run: set LOAD_FROM_CHECKPOINT = True")
 
     np.savez(
-        "C:/kan-project/model/loss_history.npz",
+        HIST_PATH,
         train_loss=train_loss,
         test_loss=test_loss,
     )
 
 # loss curves
-_hist_path = "C:/kan-project/model/loss_history.npz"
-if os.path.exists(_hist_path):
-    _h = np.load(_hist_path)
+if os.path.exists(HIST_PATH):
+    _h = np.load(HIST_PATH)
     train_loss = list(_h["train_loss"])
     test_loss  = list(_h["test_loss"])
 
@@ -232,6 +291,29 @@ mse, rmse_per, preds, actual_ppb = eval_model(model)
 print(f"\nTest MSE: {mse:.6f} | Mean RMSE: {rmse_per.mean():.4f} ppb/step")
 for name, rmse in zip(species_names, rmse_per):
     print(f"  {name:10s}: {rmse:.4f} ppb/step")
+
+# symbolic fitting: snap well-fit edges to closed-form functions for
+# interpretability, then briefly retune their affine constants.
+# edges killed by pruning get snapped to the constant '0' automatically.
+if np.isnan(mse):
+    print("\nSkipping auto_symbolic: model is already producing NaN, retrain first")
+else:
+    rmse_before = rmse_per.copy()
+
+    model.save_act         = True
+    model.symbolic_enabled = True
+    with torch.no_grad():
+        model(dataset['train_input'])
+
+    model.auto_symbolic(r2_threshold=SYMBOLIC_R2_MIN)
+    model.fit(dataset, opt="LBFGS", steps=SYMBOLIC_FIT_STEPS, lamb=0, loss_fn=weighted_mse)
+    model.save_act = False
+
+    mse, rmse_per, preds, actual_ppb = eval_model(model)
+    print(f"\nAfter auto_symbolic: Test MSE: {mse:.6f} | Mean RMSE: {rmse_per.mean():.4f} ppb/step")
+    for name, before, after in zip(species_names, rmse_before, rmse_per):
+        flag = "  worse" if after > before else ""
+        print(f"  {name:10s}: {before:.4f} -> {after:.4f} ppb/step{flag}")
 
 # # pseudo-steady-state check: reconstruct C(t+1) = C_input(t) + predicted tendency,
 # # and see how often that violates the physical constraint that concentrations >= 0
@@ -317,8 +399,8 @@ max_label_len = max(len(s) for s in species_names)
 label_varscale = min(1.0, max(0.25, 19 / (n_species * max_label_len)))
 try:
     model.plot(in_vars=species_names, out_vars=species_names, scale=1.0, varscale=label_varscale)
-    plt.savefig("C:/kan-project/kan_graph.png", dpi=200, bbox_inches="tight")
-    print("Saved KAN graph to C:/kan-project/kan_graph.png")
+    plt.savefig(GRAPH_PATH, dpi=200, bbox_inches="tight")
+    print(f"Saved KAN graph to {GRAPH_PATH}")
 except MemoryError as e:
     print(f"Skipped KAN graph: ran out of memory compositing it ({e}). "
           f"This is a pykan scaling limit at this network width, not a training/eval problem — "
