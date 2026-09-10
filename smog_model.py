@@ -13,6 +13,9 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from kan import KAN
 import joblib
 import os
+import io
+import contextlib
+from symbolic_viz import parse_symbolic_log, plot_symbolic_snapping
 
 # paths — relative to this script's location, so it runs regardless of clone path
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -142,7 +145,7 @@ KAN_WIDTH = [n_species, 16, 16, 16, n_species]
 print(f"\nArchitecture: {KAN_WIDTH}")
 
 # per-species loss weighting
-SPECIES_WEIGHTS = {"OH": 1.5}
+SPECIES_WEIGHTS = {"OH": 1.5} #change to much higher
 species_weight = torch.tensor(
     [SPECIES_WEIGHTS.get(name, 1.0) for name in species_names],
     dtype=torch.float32, device=device,
@@ -172,6 +175,11 @@ def loss_key(results):
     return 'test_loss' if 'test_loss' in results else 'val_loss'
 
 def fit_chunked(model, dataset, opt, total_steps, chunk_size, best_val, print_every=PRINT_EVERY, **kwargs):
+    # pykan defaults to update_grid=True, which rebuilds each layer's grid from
+    # sample quantiles every grid_update_freq(5) steps. that jitters the loss every
+    # 5 steps and goes NaN outright once the grid is refined past 5 intervals, so
+    # the grid stays fixed here and is only changed deliberately by refine()
+    kwargs.setdefault("update_grid", False)
     train_hist, test_hist = [], []
     steps_done = 0
     while steps_done < total_steps:
@@ -232,9 +240,8 @@ else:
     # grid refinement: train the pruned network at increasing spline
     # resolution, retraining after each refine step
     for grid in REFINE_GRIDS:
-        refine_idx = torch.randperm(dataset['train_input'].shape[0])[:8192]
         model.save_act = True
-        model(dataset['train_input'][refine_idx])
+        model(dataset['train_input'])
         model = model.refine(grid)
         model.save_act = False   # refine() resets save_act to its default (True)
 
@@ -305,9 +312,32 @@ else:
     with torch.no_grad():
         model(dataset['train_input'])
 
-    model.auto_symbolic(r2_threshold=SYMBOLIC_R2_MIN)
-    model.fit(dataset, opt="LBFGS", steps=SYMBOLIC_FIT_STEPS, lamb=0, loss_fn=weighted_mse)
+    # tee auto_symbolic's per-edge decisions: they stream to the console as usual
+    # and are also kept so the snapping figure can be built from them
+    _sym_log     = io.StringIO()
+    _real_stdout = sys.stdout
+
+    class _Tee:
+        def write(self, s):
+            _real_stdout.write(s)
+            _sym_log.write(s)
+            return len(s)
+
+        def flush(self):
+            _real_stdout.flush()
+
+    with contextlib.redirect_stdout(_Tee()):
+        model.auto_symbolic(r2_threshold=SYMBOLIC_R2_MIN)
+
+    model.fit(dataset, opt="LBFGS", steps=SYMBOLIC_FIT_STEPS, lamb=0, loss_fn=weighted_mse,
+              update_grid=False)
     model.save_act = False
+
+    plot_symbolic_snapping(
+        parse_symbolic_log(_sym_log.getvalue()),
+        [int(w) for w in model.width_in],
+        species_names, SYMBOLIC_R2_MIN, FIG_DIR + "symbolic_snapping.png",
+    )
 
     mse, rmse_per, preds, actual_ppb = eval_model(model)
     print(f"\nAfter auto_symbolic: Test MSE: {mse:.6f} | Mean RMSE: {rmse_per.mean():.4f} ppb/step")
