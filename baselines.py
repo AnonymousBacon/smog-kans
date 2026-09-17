@@ -20,8 +20,8 @@ KAN_PREDS  = os.path.join(BASE_DIR, "predictions.npz")
 SEED       = 42
 os.makedirs(FIG_DIR, exist_ok=True)
 
-device = torch.device('cpu')   # no cuda on mac; mps has incomplete op coverage for pykan/lbfgs
-print(f"device: {device}")
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   # mps skipped: incomplete op coverage for pykan/lbfgs
+print(f"device: {device}" + (f" ({torch.cuda.get_device_name(0)})" if device.type == "cuda" else ""))
 
 # load preprocessed splits saved by smog_model.py
 # these are already log1p + StandardScaler transformed — same as what KAN trained on

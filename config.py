@@ -40,4 +40,5 @@ SYMBOLIC_FIT_STEPS  = 200   # retune affine constants after snapping
 # per-species loss weighting
 SPECIES_WEIGHTS = {"OH": 1.5} #change to much higher
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   # mps has incomplete op coverage for pykan/lbfgs
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   # mps skipped: incomplete op coverage for pykan/lbfgs
+print(f"device: {device}" + (f" ({torch.cuda.get_device_name(0)})" if device.type == "cuda" else ""))
