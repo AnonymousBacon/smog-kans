@@ -1,28 +1,56 @@
-import torch
-from kan import KAN
+import sys
+import functools
+sys.stdout.reconfigure(encoding="utf-8")
+print = functools.partial(print, flush=True)
+
+import numpy as np
 
 import config as cfg
+import data
+import kan_patches
+import train
+import evaluate
+import visualize
 
+kan_patches.install()
 
-def build_kan_width(n_species):
-    return [n_species, 16, 16, 16, n_species]
+X_clean, D_active, species_names, n_species = data.load_and_clean_data()
 
+# distribution plots
+visualize.plot_distributions(np.log1p(X_clean), D_active, species_names)
 
-def build_species_weight(species_names, device):
-    return torch.tensor(
-        [cfg.SPECIES_WEIGHTS.get(name, 1.0) for name in species_names],
-        dtype=torch.float32, device=device,
-    )
+# scale
+scalerX, scalerY, X_train, Y_train, X_test, Y_test, dataset = data.scale_and_split(X_clean, D_active)
 
+# training
+KAN_WIDTH = train.build_kan_width(n_species)
+print(f"\nArchitecture: {KAN_WIDTH}")
 
-def make_weighted_mse(species_weight):
-    def weighted_mse(pred, target):
-        return torch.mean(species_weight * (pred - target) ** 2)
-    return weighted_mse
+species_weight = train.build_species_weight(species_names, cfg.device)
+weighted_mse   = train.make_weighted_mse(species_weight)
 
+# save preprocessed splits + scaler + weights so baselines.py trains on the same data/weights
+data.save_splits(X_train, Y_train, X_test, Y_test, species_names, species_weight, scalerY, scalerX)
 
-def make_model(kan_width, seed, device):
-    torch.manual_seed(seed)
-    m = KAN(width=kan_width, grid=5, k=3, seed=seed, device=device, auto_save=False, grid_eps=0.0)
-    m.speed()
-    return m
+trained_model, _, _, _ = train.run_training_pipeline(dataset, KAN_WIDTH, weighted_mse)
+
+# loss curves
+visualize.plot_loss_curves()
+
+# evaluate
+mse, rmse_per, preds, actual_ppb = evaluate.eval_model(trained_model, dataset, scalerY)
+
+print(f"\nTest MSE: {mse:.6f} | Mean RMSE: {rmse_per.mean():.4f} ppb/step")
+for name, rmse in zip(species_names, rmse_per):
+    print(f"  {name:10s}: {rmse:.4f} ppb/step")
+
+trained_model, mse, rmse_per, preds, actual_ppb = evaluate.run_symbolic_fitting(
+    trained_model, dataset, scalerY, species_names, mse, rmse_per, weighted_mse,
+)
+
+# ols scatter: predicted vs actual per species
+visualize.plot_scatter(preds, actual_ppb, species_names, n_species)
+
+# save predictions and KAN graph
+data.save_predictions(preds, actual_ppb, species_names)
+visualize.plot_kan_graph(trained_model, dataset, species_names, n_species)

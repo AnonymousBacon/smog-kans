@@ -1,8 +1,32 @@
 import numpy as np
+import torch
 from kan import KAN
 
 import config as cfg
-import model as model_mod
+
+
+def build_kan_width(n_species):
+    return [n_species, 16, 16, 16, n_species]
+
+
+def build_species_weight(species_names, device):
+    return torch.tensor(
+        [cfg.SPECIES_WEIGHTS.get(name, 1.0) for name in species_names],
+        dtype=torch.float32, device=device,
+    )
+
+
+def make_weighted_mse(species_weight):
+    def weighted_mse(pred, target):
+        return torch.mean(species_weight * (pred - target) ** 2)
+    return weighted_mse
+
+
+def make_model(kan_width, seed, device):
+    torch.manual_seed(seed)
+    m = KAN(width=kan_width, grid=5, k=3, seed=seed, device=device, auto_save=False, grid_eps=0.0)
+    m.speed()
+    return m
 
 
 def loss_key(results):
@@ -40,7 +64,7 @@ def run_training_pipeline(dataset, kan_width, weighted_mse):
         model = KAN.loadckpt(cfg.CKPT_PATH)
         return model, [], [], float('inf')
 
-    model    = model_mod.make_model(kan_width, cfg.SEED, cfg.device)
+    model    = make_model(kan_width, cfg.SEED, cfg.device)
     best_val = float('inf')
     train_loss, test_loss = [], []
 
@@ -75,6 +99,10 @@ def run_training_pipeline(dataset, kan_width, weighted_mse):
     model.save_act  = False
     model.auto_save = False
 
+    # prune changed the parameter shapes, so a best checkpoint from before it can
+    # no longer be loaded into this model. reset so BEST_CKPT_PATH stays loadable
+    best_val = float('inf')
+
     # grid refinement: train the pruned network at increasing spline
     # resolution, retraining after each refine step
     for grid in cfg.REFINE_GRIDS:
@@ -82,6 +110,7 @@ def run_training_pipeline(dataset, kan_width, weighted_mse):
         model(dataset['train_input'])
         model = model.refine(grid)
         model.save_act = False   # refine() resets save_act to its default (True)
+        best_val = float('inf')  # grid change resizes coef, same reason as after prune
 
         print(f"\nGrid refine: grid={grid} ({cfg.REFINE_STEPS} steps)")
         stage_train, stage_test, best_val = fit_chunked(

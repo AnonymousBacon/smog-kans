@@ -2,7 +2,7 @@
 
 A summary of every meaningful change made to the model, with plain-English explanations of what each one does and why it matters.
 
-> note: smog_model.py was later split into config.py, data.py, model.py, train.py, evaluate.py, and visualize.py, with smog_model.py kept as the entrypoint that ties them together. the entries below predate that split and describe logic that now lives across those files.
+> note: the original smog_model.py was later split into config.py, data.py, train.py, evaluate.py, and visualize.py, with model.py as the new entrypoint that calls into them. the entries below predate that split and describe logic that now lives across those files.
 
 ---
 

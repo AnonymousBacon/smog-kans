@@ -4,6 +4,7 @@ pandas==2.3.3
 torch==2.13.0+cu130
 matplotlib==3.10.9
 scikit-learn==1.7.2
+xgboost==3.2.0
 scipy==1.15.3
 joblib==1.5.3
 pykan==0.2.8

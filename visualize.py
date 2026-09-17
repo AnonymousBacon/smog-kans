@@ -44,12 +44,14 @@ def plot_loss_curves():
         train_loss = list(_h["train_loss"])
         test_loss  = list(_h["test_loss"])
 
+        # pykan stores sqrt() of the loss it was given, and it was given
+        # weighted_mse, so these series are weighted RMSE and not MSE
         fig, ax = plt.subplots(figsize=(10, 5))
-        fig.suptitle("Train vs Test Loss (log scale)", fontsize=13)
+        fig.suptitle("Train vs Test Loss (weighted RMSE, log scale)", fontsize=13)
         ax.semilogy(train_loss, label='train')
         ax.semilogy(test_loss,  label='test', linestyle='--')
         ax.set_xlabel("Steps")
-        ax.set_ylabel("MSE Loss")
+        ax.set_ylabel("weighted RMSE (scaled units)")
         ax.legend(fontsize=7)
         plt.tight_layout()
         plt.savefig(cfg.FIG_DIR + "loss_curves.png", dpi=150, bbox_inches="tight")
@@ -66,6 +68,16 @@ def plot_scatter(preds, actual_ppb, species_names, n_species):
     axes = axes.flatten()
     for i, (name, ax) in enumerate(zip(species_names, axes)):
         a, p = actual_ppb[:, i], preds[:, i]
+
+        # np.polyfit raises LinAlgError on non-finite input, which would take out
+        # the whole figure just because one species went bad
+        finite = np.isfinite(a) & np.isfinite(p)
+        a, p = a[finite], p[finite]
+        if a.size < 2:
+            ax.set_title(f"{name}  (no finite predictions)", fontsize=9)
+            ax.set_visible(True)
+            continue
+
         ax.scatter(a, p, s=1, alpha=0.3)
 
         # 1:1 reference line
@@ -96,8 +108,16 @@ def plot_scatter(preds, actual_ppb, species_names, n_species):
 def plot_kan_graph(model, dataset, species_names, n_species):
     model.save_act = True
     with torch.no_grad():
-        plot_idx = torch.randperm(dataset['train_input'].shape[0])[:8192]
-        model(dataset['train_input'][plot_idx])
+        # seeded so the same run always composites the graph from the same sample
+        gen = torch.Generator(device='cpu').manual_seed(cfg.SEED)
+        plot_idx = torch.randperm(dataset['train_input'].shape[0], generator=gen)[:8192]
+        out = model(dataset['train_input'][plot_idx])
+
+    # plot() turns activations into alpha values, so a non-finite model dies deep
+    # inside matplotlib with an opaque "alpha is outside 0-1 range" error
+    if not torch.isfinite(out).all():
+        print("Skipped KAN graph: model produces non-finite activations, retrain first")
+        return
 
     # pykan's label font size (40*scale*varscale) and label spacing (fig_width/n_species)
     # both scale with `scale`, so only varscale (not scale) can prevent label overlap

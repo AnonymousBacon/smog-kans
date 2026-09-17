@@ -8,7 +8,6 @@ import joblib
 import os
 import time
 
-# pip install xgboost scikit-learn if not already installed
 from xgboost import XGBRegressor
 from sklearn.multioutput import MultiOutputRegressor
 
@@ -23,7 +22,7 @@ os.makedirs(FIG_DIR, exist_ok=True)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   # mps skipped: incomplete op coverage for pykan/lbfgs
 print(f"device: {device}" + (f" ({torch.cuda.get_device_name(0)})" if device.type == "cuda" else ""))
 
-# load preprocessed splits saved by smog_model.py
+# load preprocessed splits saved by model.py
 # these are already log1p + StandardScaler transformed — same as what KAN trained on
 d          = np.load(SPLITS, allow_pickle=True)
 X_train    = d['X_train']
@@ -72,7 +71,7 @@ class FFNN(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-# weighted loss - reuses the exact per-species weights smog_model.py trained with
+# weighted loss - reuses the exact per-species weights model.py trained with
 _weights = torch.tensor(d['species_weight'], dtype=torch.float32, device=device)
 
 def weighted_mse(pred, target):

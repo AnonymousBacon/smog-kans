@@ -51,14 +51,16 @@ def t(arr):
 
 
 def scale_and_split(X_clean, D_active):
-    scalerX  = StandardScaler()
-    scalerY  = StandardScaler()
-    X_scaled = scalerX.fit_transform(np.log1p(X_clean))
-    Y_scaled = scalerY.fit_transform(D_active)
+    X_log   = np.log1p(X_clean)
+    n_train = int(X_log.shape[0] * cfg.TRAIN_SPLIT)
 
-    n_train          = int(X_scaled.shape[0] * cfg.TRAIN_SPLIT)
-    X_train, Y_train = X_scaled[:n_train], Y_scaled[:n_train]
-    X_test,  Y_test  = X_scaled[n_train:], Y_scaled[n_train:]
+    # fit on train only: fitting before the split leaks test mean/std into the
+    # training inputs, which makes the reported test score optimistic
+    scalerX = StandardScaler().fit(X_log[:n_train])
+    scalerY = StandardScaler().fit(D_active[:n_train])
+
+    X_train, Y_train = scalerX.transform(X_log[:n_train]), scalerY.transform(D_active[:n_train])
+    X_test,  Y_test  = scalerX.transform(X_log[n_train:]), scalerY.transform(D_active[n_train:])
     print(X_train.shape)
 
     dataset = {
@@ -70,7 +72,7 @@ def scale_and_split(X_clean, D_active):
     return scalerX, scalerY, X_train, Y_train, X_test, Y_test, dataset
 
 
-def save_splits(X_train, Y_train, X_test, Y_test, species_names, species_weight, scalerY):
+def save_splits(X_train, Y_train, X_test, Y_test, species_names, species_weight, scalerY, scalerX):
     # saved so baselines.py trains on the same data/weights — keep these keys
     # and paths in sync with baselines.py's np.load(SPLITS_PATH) / scalerY load
     np.savez(
@@ -81,7 +83,9 @@ def save_splits(X_train, Y_train, X_test, Y_test, species_names, species_weight,
         species_weight=species_weight.cpu().numpy(),
     )
     joblib.dump(scalerY, cfg.SCALER_Y_PATH)
-    print(f"Saved splits + scaler to {os.path.dirname(cfg.SPLITS_PATH)}")
+    # scalerX is needed to map symbolic formulas back to ppb, so keep it too
+    joblib.dump(scalerX, cfg.SCALER_X_PATH)
+    print(f"Saved splits + scalers to {os.path.dirname(cfg.SPLITS_PATH)}")
 
 
 def save_predictions(preds, actual_ppb, species_names):
