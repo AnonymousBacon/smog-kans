@@ -1,0 +1,36 @@
+# the minimal model, then the same model with reg on from step 0.
+# roadmap 1b-reg, run on the tuned baseline rather than the untuned one: phase1.yaml
+# swept lamb 1e-5..1e-3 with no grid updates, phase1_opt.yaml only tried 1e-2/1e-1
+# (both collapsed to r2 ~ 0). nothing covered the useful bracket on the model we
+# actually keep, so that is what this does.
+defaults:
+  width_hidden: [1]       # 1 hidden layer, 1 node
+  grid: 3
+  k: 3
+  grid_eps: 0.0
+  grid_update_every: 10   # refit knots to the activations early, then leave them alone
+  grid_update_until: 50
+  lamb: 0.0
+  prune: false            # no pruning anywhere in this config
+  prune_node_th: 1.0e-2
+  prune_edge_th: 3.0e-2
+  refine: [5, 10]         # super simple refinement: 3 -> 5 -> 10
+  steps: 200
+  eval_every: 10
+  n_exps: 3000
+  dtype: float32
+  seed: 42
+
+runs:
+  # no regularization at all
+  - name: min_reg0
+
+  # reg from step 0 to the end, same budget and seed. the only change is lamb
+  - name: min_reg1e-5
+    lamb: 1.0e-5
+  - name: min_reg1e-4
+    lamb: 1.0e-4
+  - name: min_reg1e-3
+    lamb: 1.0e-3
+  - name: min_reg1e-2
+    lamb: 1.0e-2

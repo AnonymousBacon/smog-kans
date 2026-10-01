@@ -89,9 +89,15 @@ def plot_scatter(preds, actual_ppb, species_names, n_species):
         x_fit = np.linspace(lims[0], lims[1], 200)
         ax.plot(x_fit, m * x_fit + b, 'b-', linewidth=0.9, label=f'OLS (m={m:.2f})')
 
-        ss_res = np.sum((p - (m * a + b)) ** 2)
-        ss_tot = np.sum((p - p.mean()) ** 2)
-        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+        # predictive r2: residuals against the 1:1 line, over the variance of the
+        # actuals. measuring against the fitted ols line and dividing by the
+        # variance of the predictions instead scores how straight the cloud is,
+        # not how accurate it is -- a constant prediction lies exactly on its own
+        # flat ols line, so OH and ALD2 both reported r2 = 1.000 while predicting
+        # a single number and explaining none of the variance
+        ss_res = np.sum((a - p) ** 2)
+        ss_tot = np.sum((a - a.mean()) ** 2)
+        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float('nan')
 
         ax.set_title(f"{name}  R²={r2:.3f}", fontsize=9)
         ax.set_xlabel("actual")

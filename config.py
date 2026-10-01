@@ -37,9 +37,19 @@ REFINE_STEPS    = 250        # lbfgs steps per refine stage
 # symbolic fitting: snap well-fit edges to closed-form functions
 SYMBOLIC_R2_MIN     = 0.9
 SYMBOLIC_FIT_STEPS  = 200   # retune affine constants after snapping
+SYMBOLIC_FIT_SAMPLES = 4000  # rows auto_symbolic sees; see the note in evaluate.py
+
+# pykan's default library contains functions with poles (1/x^n, tan) and ones
+# undefined for negative inputs (log, sqrt, x^0.5). inputs here are
+# standardscaler'd, so activations are centred on zero and take both signs --
+# every one of those is guaranteed to be evaluated at a point it blows up on.
+# a snapped 1/x^2 turned the whole forward pass to nan the first time symbolic
+# fitting ran to completion. these are the ones finite across all of R.
+SYMBOLIC_LIB = ['0', 'x', 'x^2', 'x^3', 'x^4', 'x^5',
+                'exp', 'sin', 'cos', 'tanh', 'gaussian', 'abs']
 
 # per-species loss weighting
 SPECIES_WEIGHTS = {"OH": 1.5} #change to much higher
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   # mps skipped: incomplete op coverage for pykan/lbfgs
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"device: {device}" + (f" ({torch.cuda.get_device_name(0)})" if device.type == "cuda" else ""))

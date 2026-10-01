@@ -1,0 +1,18 @@
+{
+  "width_hidden": [
+    1
+  ],
+  "grid": 3,
+  "k": 3,
+  "lamb": 0.0001,
+  "prune": false,
+  "prune_node_th": 0.01,
+  "prune_edge_th": 0.03,
+  "refine": [],
+  "steps": 200,
+  "eval_every": 10,
+  "n_exps": 10000,
+  "dtype": "float32",
+  "seed": 42,
+  "name": "1b_reg_1e-4"
+}

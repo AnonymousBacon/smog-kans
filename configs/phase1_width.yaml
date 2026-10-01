@@ -1,0 +1,39 @@
+# roadmap 1b-width, widened. phase1_3k showed [11,4,11] beats [11,1,11] by ~30 noise
+# floors, so 1 node was the binding constraint, not lamb. this finds where width stops
+# paying. recipe is the validated best minimal model (gu50 + refine 3->5->10) with width
+# as the only change, lamb=0 throughout.
+defaults:
+  width_hidden: [1]
+  grid: 3
+  k: 3
+  grid_eps: 0.0
+  grid_update_every: 10
+  grid_update_until: 50
+  lamb: 0.0
+  prune: false
+  prune_node_th: 1.0e-2
+  prune_edge_th: 3.0e-2
+  refine: [5, 10]
+  steps: 200
+  eval_every: 10
+  n_exps: 3000
+  dtype: float32
+  seed: 42
+  max_z: 20.0   # same outlier filter as phase 2, so widths compare across both
+
+runs:
+  - name: w1
+  - name: w4
+    width_hidden: [4]
+  - name: w8
+    width_hidden: [8]
+  - name: w16
+    width_hidden: [16]
+  - name: w16x2
+    width_hidden: [16, 16]
+
+  # numerics check at 3k. the float64 run in runs/phase1 sits in the sweep whose
+  # val/test gap is unexplained, so it cannot support "cpu/gpu drift is just numerics"
+  - name: w4_f64
+    width_hidden: [4]
+    dtype: float64

@@ -157,9 +157,10 @@ def plot_scatter(preds, actual, names, title, filename):
         m, b = np.polyfit(a, p, 1)
         x_fit = np.linspace(lims[0], lims[1], 200)
         ax.plot(x_fit, m * x_fit + b, 'b-', linewidth=0.9, label=f'OLS (m={m:.2f})')
-        ss_res = np.sum((p - (m * a + b)) ** 2)
-        ss_tot = np.sum((p - p.mean()) ** 2)
-        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+        # predictive r2 against the 1:1 line; see the note in visualize.py
+        ss_res = np.sum((a - p) ** 2)
+        ss_tot = np.sum((a - a.mean()) ** 2)
+        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float('nan')
         ax.set_title(f"{name}  R²={r2:.3f}", fontsize=9)
         ax.set_xlabel("actual")
         ax.set_ylabel("predicted")

@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Smog KAN: how the model works</title>
+<style>
+  @page { margin: 18mm 16mm; }
+
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  body {
+    font-family: "Roboto", "Helvetica Neue", Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.6;
+    color: #202124;
+    margin: 0;
+  }
+
+  h1 {
+    font-size: 21pt;
+    font-weight: 400;
+    line-height: 1.25;
+    margin: 0 0 4px;
+    color: #202124;
+  }
+
+  .subtitle {
+    font-size: 10pt;
+    color: #5f6368;
+    margin: 0 0 22px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #dadce0;
+  }
+
+  h2 {
+    font-size: 14pt;
+    font-weight: 500;
+    margin: 26px 0 8px;
+    color: #202124;
+    page-break-after: avoid;
+  }
+
+  h3 {
+    font-size: 11.5pt;
+    font-weight: 500;
+    margin: 18px 0 6px;
+    color: #202124;
+    page-break-after: avoid;
+  }
+
+  p { margin: 0 0 10px; }
+
+  ul, ol { margin: 0 0 10px; padding-left: 22px; }
+  li { margin-bottom: 5px; }
+
+  code {
+    font-family: "Roboto Mono", "SF Mono", Menlo, Consolas, monospace;
+    font-size: 9pt;
+    background: #f1f3f4;
+    border-radius: 3px;
+    padding: 1px 4px;
+    color: #202124;
+  }
+
+  pre {
+    font-family: "Roboto Mono", "SF Mono", Menlo, Consolas, monospace;
+    font-size: 8.5pt;
+    line-height: 1.5;
+    background: #f8f9fa;
+    border: 1px solid #dadce0;
+    border-radius: 4px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    margin: 0 0 12px;
+    page-break-inside: avoid;
+  }
+  pre code { background: none; padding: 0; font-size: 8.5pt; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0 0 14px;
+    font-size: 9.5pt;
+    page-break-inside: avoid;
+  }
+  th {
+    text-align: left;
+    font-weight: 500;
+    background: #f1f3f4;
+    border: 1px solid #dadce0;
+    padding: 7px 9px;
+    vertical-align: top;
+  }
+  td {
+    border: 1px solid #dadce0;
+    padding: 7px 9px;
+    vertical-align: top;
+  }
+
+  .callout {
+    border-left: 4px solid #1a73e8;
+    background: #f8f9fa;
+    padding: 9px 13px;
+    margin: 0 0 13px;
+    page-break-inside: avoid;
+  }
+  .callout.caution { border-left-color: #f29900; }
+  .callout.key { border-left-color: #188038; }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout strong { font-weight: 500; }
+
+  .section { page-break-inside: auto; }
+  .nobreak { page-break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<h1>Smog KAN: how the model works</h1>
+<p class="subtitle">Internal reference. This document explains what each part of the pipeline does, why it exists, and how the parts connect. It is a conceptual overview, not a line-by-line code walkthrough.</p>
+
+<h2>What the model predicts</h2>
+
+<p>The pipeline takes the current concentration of 11 chemical species from a simulated smog experiment and predicts how much each concentration changes over the next five-minute step. That per-step change is called the <strong>tendency</strong>, and it is what the network learns to output — not the concentration itself.</p>
+
+<p>The model is a Kolmogorov-Arnold Network (KAN) rather than a standard multilayer perceptron (MLP). The two architectures differ in one structural way that drives every design decision here:</p>
+
+<ul>
+  <li>An <strong>MLP</strong> puts fixed activation functions on nodes and learns a scalar weight for each edge.</li>
+  <li>A <strong>KAN</strong> puts a learnable one-dimensional spline on every edge. A spline is a smooth curve defined by a small set of control points.</li>
+</ul>
+
+<p>Because each edge holds a curve rather than a single number, you can inspect what an edge learned and — when the curve settles into a recognizable shape — replace it with a closed-form expression such as <code>sin(x)</code> or <code>a/x + b</code>.</p>
+
+<div class="callout key">
+  <p><strong>Why this matters:</strong> the project has two goals, not one. The first is to predict tendencies accurately. The second is to recover the underlying chemistry as readable equations. Every later stage — the staged training, the pruning, and the symbolic fitting — exists to serve the second goal. If you only needed accurate predictions, a simpler model would do.</p>
+</div>
+
+<h2>How a run fits together</h2>
+
+<p>Each module owns one stage of the pipeline, and <code>model.py</code> calls them in order. The following table maps each file to its responsibility.</p>
+
+<table>
+  <tr><th style="width:24%">File</th><th>Responsibility</th></tr>
+  <tr><td><code>model.py</code></td><td>Entry point. Calls every other module in sequence and holds no logic of its own.</td></tr>
+  <tr><td><code>config.py</code></td><td>Single source of truth for paths, hyperparameters, and the compute device.</td></tr>
+  <tr><td><code>data.py</code></td><td>Loads the CSV, computes tendencies, scales, and splits the data.</td></tr>
+  <tr><td><code>train.py</code></td><td>Builds the network and runs the four-stage training pipeline.</td></tr>
+  <tr><td><code>evaluate.py</code></td><td>Reports per-species accuracy and performs symbolic fitting.</td></tr>
+  <tr><td><code>visualize.py</code></td><td>Produces every figure in <code>figures/</code>.</td></tr>
+  <tr><td><code>kan_patches.py</code></td><td>Patches a pykan bug that produces NaNs on CUDA after pruning.</td></tr>
+  <tr><td><code>baselines.py</code></td><td>Trains XGBoost and a feedforward network on identical data for comparison.</td></tr>
+</table>
+
+<h2>Prepare the data</h2>
+<p><code>data.py</code></p>
+
+<p>The raw input is a single CSV of simulated experiments: 1.1 million independent runs, each logging 13 concentration snapshots — an initial state plus 12 five-minute steps. <code>config.N_EXPS</code> controls how many experiments load; the rest of the file stays untouched on disk.</p>
+
+<p><code>load_and_clean_data()</code> does three things:</p>
+
+<ol>
+  <li><strong>Drops unreactive species.</strong> <code>H2O</code>, <code>O2</code>, <code>HNO3</code>, <code>CO</code>, and <code>H2</code> do not change meaningfully across a run, so they are excluded. Eleven species remain.</li>
+  <li><strong>Computes tendencies.</strong> Each species' tendency is the difference between consecutive snapshots.</li>
+  <li><strong>Removes boundary rows.</strong> One row per experiment is dropped: the transition from the last snapshot of experiment <em>k</em> to the first snapshot of experiment <em>k+1</em>. That transition is not a real chemical change, and leaving it in would inject a spurious jump between two unrelated simulations into the training data.</li>
+</ol>
+
+<h3>Scaling and splitting</h3>
+
+<p><code>scale_and_split()</code> applies <code>log1p</code> to the inputs, then standardizes them. Concentrations span many orders of magnitude across species — ozone sits in parts per billion while the hydroxyl radical sits near parts per trillion — and a KAN's splines only resolve well over a bounded, well-conditioned range. The log transform compresses that range; <code>log1p</code> rather than a plain logarithm handles concentrations of exactly zero.</p>
+
+<p>Tendencies are standardized but not log-transformed, because a tendency can be negative and a logarithm is undefined there.</p>
+
+<div class="callout">
+  <p><strong>Note:</strong> both scalers are fit on the training split only, then applied to both splits. Fitting before the split would leak test-set mean and standard deviation into the training inputs and make the reported test score optimistic.</p>
+</div>
+
+<p><code>save_splits()</code> writes the scaled arrays, both scalers, and the per-species loss weights to <code>model/splits.npz</code>. This is the contract <code>baselines.py</code> depends on to train its comparison models on byte-identical data.</p>
+
+<h2>Train the model</h2>
+<p><code>train.py</code></p>
+
+<p>The network shape is <code>[n_species, 16, 16, 16, n_species]</code> — equal width in and out, with three hidden layers of 16 nodes. Training runs in four stages. Each stage prepares the ground for the next rather than simply adding more steps.</p>
+
+<table>
+  <tr><th style="width:18%">Stage</th><th style="width:16%">Steps</th><th>What it does and why</th></tr>
+  <tr>
+    <td><strong>1. Warm up</strong></td>
+    <td><code>WARMUP_STEPS</code><br>(1200)</td>
+    <td>Trains with no regularization to reach reasonable accuracy quickly. Internal spline caching is off for speed.</td>
+  </tr>
+  <tr>
+    <td><strong>2. Sparsify</strong></td>
+    <td><code>SPARSIFY_STEPS</code><br>(300)</td>
+    <td>Turns on an L1 and entropy penalty over edge activations. This removes nothing by itself; it concentrates the signal onto a small number of edges so that pruning has something clean to act on.</td>
+  </tr>
+  <tr>
+    <td><strong>3. Prune</strong></td>
+    <td>—</td>
+    <td>Removes edges and nodes whose contribution fell below <code>PRUNE_EDGE_TH</code> and <code>PRUNE_NODE_TH</code> during sparsification, shrinking the network's actual shape.</td>
+  </tr>
+  <tr>
+    <td><strong>4. Refine the grid</strong></td>
+    <td><code>REFINE_STEPS</code><br>(250 per grid)</td>
+    <td>Now that the structure is fixed and small, gives the splines a finer grid and retrains — twice, at increasing resolution (<code>REFINE_GRIDS = [10, 20]</code>).</td>
+  </tr>
+</table>
+
+<p>The ordering is deliberate. Refining before pruning would spend spline resolution on edges that are about to be deleted, and pruning before sparsifying would cut edges that had not yet been given a chance to concentrate their signal.</p>
+
+<h3>Chunked optimization</h3>
+
+<p>All training goes through <code>fit_chunked()</code>, which runs the LBFGS optimizer in small chunks — 25 steps by default — instead of one long call. Chunking does not change the optimization. It exists so the run can do two things it otherwise could not:</p>
+
+<ul>
+  <li>Checkpoint the best-scoring model seen so far, to <code>model/smog_kan_best</code>.</li>
+  <li>Print progress periodically during runs that take hours.</li>
+</ul>
+
+<div class="callout caution">
+  <p><strong>Caution:</strong> pruning and grid refinement both change the network's parameter shapes, so the best-so-far tracker resets at each of those points. A best checkpoint saved under the old shape cannot be loaded into the new one.</p>
+</div>
+
+<p><code>fit_chunked()</code> also forces <code>update_grid=False</code>. pykan otherwise rebuilds each layer's grid from sample quantiles every five steps, which makes the loss jitter and produces NaNs outright once the grid has been refined past five intervals. The grid changes only when <code>refine()</code> is called deliberately.</p>
+
+<h2>Evaluate the model and extract equations</h2>
+<p><code>evaluate.py</code></p>
+
+<p><code>eval_model()</code> reports root-mean-square error (RMSE) per species in real parts-per-billion units, by inverting the output scaler. Reporting in original units keeps the number directly comparable to the baselines.</p>
+
+<p><code>run_symbolic_fitting()</code> is the interpretability step, and the reason for choosing a KAN in the first place. For every edge, it tries fitting each function in a library — sine, exponential, logarithm, polynomials, and others — and keeps whichever one clears the <code>SYMBOLIC_R2_MIN</code> threshold, replacing that edge's spline with the closed-form function. Edges that fit nothing well stay as splines. Edges removed by pruning snap to the constant <code>0</code> automatically.</p>
+
+<p>After snapping, the model retrains briefly so that the newly fixed functions' affine constants — their scale and shift — can settle.</p>
+
+<div class="callout key">
+  <p><strong>Why the earlier stages matter here:</strong> symbolic fitting against a dense, unpruned network produces far fewer clean matches. Sparsifying and pruning first is what makes this step yield readable results.</p>
+</div>
+
+<h3>What snapping costs</h3>
+
+<p>Replacing flexible splines with rigid closed-form functions reduces accuracy. That trade is the point of the step, but it is worth knowing its size. On the first run to complete this stage, a network pruned to <code>[11, 12, 11, 12, 11]</code> snapped 492 edges and produced:</p>
+
+<table>
+  <tr><th style="width:40%">Measure</th><th style="width:30%">Before snapping</th><th style="width:30%">After snapping</th></tr>
+  <tr><td>Test MSE (scaled)</td><td>0.318</td><td>0.453</td></tr>
+  <tr><td>Mean RMSE (ppb/step)</td><td>0.446</td><td>0.538</td></tr>
+</table>
+
+<p>Most species degraded; <code>HO2</code> was the exception, improving slightly. Of the 492 snapped edges, 479 were pruned edges snapping to the constant <code>0</code>, and only 13 carried a real function — 10 linear, 2 sine, and 1 cosine. A network that recovers mostly linear terms is a signal to revisit the sparsification strength or the R² threshold if richer expressions are the goal.</p>
+
+<h2>Pipeline state: what's on, when, and why</h2>
+
+<p>Three flags on the KAN object change what the network does and how much memory it uses: <code>save_act</code>, <code>symbolic_enabled</code>, and <code>auto_save</code>. All three are set at more than one point across <code>train.py</code> and <code>evaluate.py</code>, and one of pykan's own methods changes a flag the pipeline never explicitly asked it to change. This section tracks every transition in the order it happens.</p>
+
+<table>
+  <tr><th style="width:12%">save_act</th><th>What it controls</th></tr>
+  <tr><td><code>True</code></td><td>Every forward pass caches per-edge activations (<code>acts</code>, <code>spline_postacts</code>, and related tensors). Required for pruning, refining, and symbolic fitting, all of which read those caches. Costs memory proportional to batch size × edge count.</td></tr>
+  <tr><td><code>False</code></td><td>Forward passes run without caching. Faster, and the only safe mode for a plain full-batch forward or backward pass.</td></tr>
+</table>
+
+<table>
+  <tr><th style="width:12%">symbolic_enabled</th><th>What it controls</th></tr>
+  <tr><td><code>True</code></td><td>Symbolic functions snapped onto edges contribute to the forward pass. Required from the point symbolic fitting begins, or a snapped edge silently outputs nothing.</td></tr>
+  <tr><td><code>False</code></td><td>Only the spline component of each edge contributes, even if a symbolic function has been fitted to it.</td></tr>
+</table>
+
+<table>
+  <tr><th style="width:12%">auto_save</th><th>What it controls</th></tr>
+  <tr><td><code>True</code></td><td>pykan writes a new numbered checkpoint (<code>0.1</code>, <code>0.2</code>, ...) to <code>model/</code> on many internal operations. Each version writes a full copy of the model's state and activation cache.</td></tr>
+  <tr><td><code>False</code></td><td>No automatic checkpoints. Only the explicit <code>saveckpt()</code> calls in the pipeline write to disk.</td></tr>
+</table>
+
+<h3>The sequence</h3>
+
+<table>
+  <tr><th style="width:24%">Step</th><th style="width:12%">save_act</th><th style="width:16%">symbolic_enabled</th><th style="width:12%">auto_save</th><th>Where</th></tr>
+  <tr><td>Model constructed</td><td>True</td><td>True</td><td><strong>False</strong></td><td><code>KAN(...)</code> defaults both to <code>True</code>; <code>make_model()</code> passes <code>auto_save=False</code> explicitly.</td></tr>
+  <tr><td><code>.speed()</code> called</td><td>→ False</td><td>→ False</td><td>→ False (unchanged)</td><td><code>model.py</code>'s single call to pykan's speed mode turns off both remaining flags at once.</td></tr>
+  <tr><td>Warmup (1200 steps)</td><td>False</td><td>False</td><td>False</td><td>Runs at this state throughout. No caching, fastest phase.</td></tr>
+  <tr><td>Before sparsify</td><td>→ True</td><td>→ True</td><td>False (unchanged)</td><td><code>run_training_pipeline()</code>, immediately before the sparsify <code>fit_chunked()</code> call.</td></tr>
+  <tr><td>Sparsify (300 steps)</td><td>True</td><td>True</td><td>False</td><td>Caching has to be on here for a reason beyond feeding pruning: pykan's <code>fit()</code> silently forces <code>lamb=0</code> whenever <code>lamb &gt; 0</code> and <code>save_act</code> is <code>False</code>. Without this flag, <code>SPARSIFY_LAMB</code> would be silently ignored and sparsification would do nothing.</td></tr>
+  <tr><td>After pruning</td><td>→ False</td><td>True (unchanged)</td><td>→ False (already False)</td><td><code>run_training_pipeline()</code>, right after <code>model.prune()</code> returns.</td></tr>
+  <tr><td>Before each refine</td><td>→ True</td><td>True (unchanged)</td><td>True (unchanged)</td><td>Set immediately before the forward pass that feeds <code>refine()</code>, since <code>refine()</code> reads cached activations to decide the new grid's initial coefficients.</td></tr>
+  <tr><td><code>model.refine(grid)</code> runs</td><td>&rarr; <strong>True</strong></td><td>True (preserved)</td><td>&rarr; <strong>True</strong></td><td>Not a pipeline decision — see the note below.</td></tr>
+  <tr><td>After each refine</td><td>→ False</td><td>True</td><td><strong>stays True</strong></td><td><code>run_training_pipeline()</code> resets <code>save_act</code> explicitly. Nothing resets <code>auto_save</code>.</td></tr>
+  <tr><td>Refine fits (250 steps × 2 grids)</td><td>False</td><td>True</td><td><strong>True</strong></td><td>Every chunk from here on triggers pykan's own checkpointing.</td></tr>
+  <tr><td>Before symbolic fitting</td><td>→ True</td><td>→ True (already True)</td><td><strong>True</strong> (unchanged)</td><td><code>run_symbolic_fitting()</code>, before the forward pass that feeds <code>auto_symbolic()</code>.</td></tr>
+  <tr><td><code>auto_symbolic()</code> + retune (200 steps)</td><td>True</td><td>True</td><td><strong>True</strong></td><td>Every edge fit and every retune step versions the model.</td></tr>
+  <tr><td>End of pipeline</td><td>→ False</td><td>True</td><td><strong>True</strong></td><td><code>run_symbolic_fitting()</code> turns off <code>save_act</code> as its last act. <code>auto_save</code> is never turned back off.</td></tr>
+</table>
+
+<div class="callout caution">
+  <p><strong>Caution — this is not something the pipeline set on purpose.</strong> <code>model.refine(grid)</code> does not modify the existing model in place; it builds an entirely new <code>MultKAN</code> internally and returns it. That constructor call hardcodes <code>auto_save=True</code> regardless of what the caller's model had, and does not pass <code>save_act</code> at all, so the new model takes pykan's class default of <code>True</code> for that too. <code>run_training_pipeline()</code> already knew about the <code>save_act</code> half of this — it resets it explicitly right after each <code>refine()</code> call — but nothing resets <code>auto_save</code>. From the first refine onward, every remaining chunk of training and every step of symbolic fitting writes a new numbered checkpoint to <code>model/</code>.</p>
+</div>
+
+<p>This is why a run's <code>model/</code> directory fills with files named like <code>0.13</code> through <code>0.23</code>, then <code>1.24</code>, <code>1.25</code>: those version numbers are pykan's automatic checkpoints, not anything the pipeline explicitly asked for. Each one is a full copy of the model's state plus its cached activations, so on a long run this is a meaningful and avoidable amount of disk I/O. Setting <code>model.auto_save = False</code> back to <code>False</code> after each <code>refine()</code> call — the same way <code>save_act</code> already is — would stop it without losing anything the pipeline actually relies on, since every checkpoint the pipeline itself reads from (<code>CKPT_PATH</code>, <code>BEST_CKPT_PATH</code>, and now the per-stage <code>BEST_CKPT_PATH_&lt;stage&gt;</code> files) is written by explicit <code>saveckpt()</code> calls, not by <code>auto_save</code>.</p>
+
+<h2>Generate figures</h2>
+<p><code>visualize.py</code></p>
+
+<p>Each figure answers one specific question about the run.</p>
+
+<table>
+  <tr><th style="width:32%">File</th><th>Question it answers</th></tr>
+  <tr><td><code>distributions.png</code></td><td>Did the input scaling produce well-behaved, comparable ranges across species?</td></tr>
+  <tr><td><code>loss_curves.png</code></td><td>Did training converge, and where do the stage transitions appear as jumps?</td></tr>
+  <tr><td><code>scatter.png</code></td><td>Per species, how closely do predictions track actual values? Includes R², a 1:1 line, and an ordinary least squares fit.</td></tr>
+  <tr><td><code>symbolic_snapping.png</code></td><td>How many edges became formulas rather than staying as splines, and how good were those fits?</td></tr>
+  <tr><td><code>kan_graph.png</code></td><td>The network itself — the final interpretable artifact the pipeline exists to produce.</td></tr>
+</table>
+
+<div class="callout">
+  <p><strong>Note:</strong> the loss curves plot weighted RMSE, not MSE. pykan stores the square root of whatever loss function it was given, and it was given <code>weighted_mse</code>.</p>
+</div>
+
+<h2>Configure a run</h2>
+<p><code>config.py</code></p>
+
+<p>This module is the single source of truth for every path and hyperparameter: the CSV location, output paths, architecture size, step counts, regularization strength, the symbolic R² threshold, and the compute device. Every other module imports it rather than hardcoding values, so a change here takes effect everywhere.</p>
+
+<table>
+  <tr><th style="width:34%">Setting</th><th style="width:16%">Value</th><th>Effect</th></tr>
+  <tr><td><code>N_EXPS</code></td><td>10000</td><td>Experiments loaded from the CSV. Yields 120,000 usable rows.</td></tr>
+  <tr><td><code>TRAIN_SPLIT</code></td><td>0.8</td><td>96,000 training rows, 24,000 test rows.</td></tr>
+  <tr><td><code>LBFGS_CHUNK</code></td><td>25</td><td>Steps per chunk between checkpoint opportunities.</td></tr>
+  <tr><td><code>SPARSIFY_LAMB</code></td><td>1e-3</td><td>Strength of the sparsification penalty.</td></tr>
+  <tr><td><code>REFINE_GRIDS</code></td><td>[10, 20]</td><td>Spline resolutions to refine through, in order.</td></tr>
+  <tr><td><code>SYMBOLIC_R2_MIN</code></td><td>0.9</td><td>Minimum fit quality for an edge to snap to a formula.</td></tr>
+  <tr><td><code>SPECIES_WEIGHTS</code></td><td>{"OH": 1.5}</td><td>Per-species multipliers in the loss. Species not listed default to 1.0.</td></tr>
+  <tr><td><code>LOAD_FROM_CHECKPOINT</code></td><td>False</td><td>When <code>True</code>, skips training and runs from evaluation onward.</td></tr>
+</table>
+
+<p>The device is selected automatically: CUDA when a GPU is available, otherwise CPU. Apple's Metal (MPS) backend is deliberately skipped, because its operation coverage is incomplete for pykan and LBFGS.</p>
+
+<h2>Patch pykan for CUDA</h2>
+<p><code>kan_patches.py</code></p>
+
+<p>This module applies a monkeypatch at startup, before any KAN code runs. It exists to work around one specific upstream bug, and it changes nothing else about the model's behavior.</p>
+
+<p>pykan 0.2.8 refits spline coefficients using a bare <code>torch.linalg.lstsq</code>. After <code>prune()</code>, most of those linear systems are rank-deficient — in one measured run, 152 of 219 systems, the worst having rank 1 where 13 was needed. The consequence depends entirely on the device:</p>
+
+<ul>
+  <li>On <strong>CPU</strong>, <code>lstsq</code> defaults to the <code>gelsy</code> driver, which handles rank deficiency correctly.</li>
+  <li>On <strong>CUDA</strong>, only <code>gels</code> is available. It assumes full rank and silently returns infinities and NaNs, so the whole model turns to NaN at the first <code>refine()</code>.</li>
+</ul>
+
+<p>The patch restores the ridge-regularized pseudo-inverse that pykan 0.2.7 used for this operation. A pseudo-inverse stays defined at any rank and takes the same code path on CPU and CUDA.</p>
+
+<p>See upstream reports <code>KindXiaoming/pykan#498</code> and <code>#416</code>.</p>
+
+<h2>Compare against baselines</h2>
+<p><code>baselines.py</code></p>
+
+<p>This script trains an XGBoost regressor and a small feedforward network on the exact train/test split and loss weighting the KAN used, loading them from <code>model/splits.npz</code>. It then compares per-species RMSE against the KAN's saved predictions in <code>predictions.npz</code>.</p>
+
+<p>It exists to answer one question: is the KAN's added complexity buying anything over simpler models?</p>
+
+<h2>Run the pipeline</h2>
+<p><code>model.py</code></p>
+
+<p>This is the entry point, and it is intentionally thin — it calls the functions above in order and does nothing on its own. The sequence is:</p>
+
+<ol>
+  <li>Install the pykan patches.</li>
+  <li>Load and clean the data.</li>
+  <li>Plot the input distributions.</li>
+  <li>Scale and split.</li>
+  <li>Build the architecture and the weighted loss.</li>
+  <li>Save the splits, so baselines can use them even if training later fails.</li>
+  <li>Run the four-stage training pipeline.</li>
+  <li>Plot the loss curves.</li>
+  <li>Evaluate.</li>
+  <li>Fit symbolically.</li>
+  <li>Plot the scatter figure.</li>
+  <li>Save predictions.</li>
+  <li>Plot the final network graph.</li>
+</ol>
+
+<p>To re-plot or re-run symbolic fitting without retraining, set <code>LOAD_FROM_CHECKPOINT = True</code> in <code>config.py</code>. The run then skips straight to loading a saved model and continues from evaluation onward.</p>
+
+<h2>Resolved issue: symbolic fitting exhausted GPU memory</h2>
+
+<p>A GPU run completed all four training stages and then stopped during symbolic fitting. This section records the failure and its fix, because the cause is a scaling limit in pykan rather than a defect in the model or the training pipeline.</p>
+
+<h3>Symptom</h3>
+
+<p>The run trains to completion and writes <code>model/smog_kan</code>, <code>model/loss_history.npz</code>, and <code>figures/loss_curves.png</code>. Roughly fifteen seconds later the process stops. It never writes <code>scatter.png</code>, <code>predictions.npz</code>, or <code>kan_graph.png</code>. The traceback ends like this:</p>
+
+<pre><code>torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 3.65 GiB
+
+  evaluate.py      model.auto_symbolic(r2_threshold=cfg.SYMBOLIC_R2_MIN)
+  MultKAN.py       suggest_symbolic -> fix_symbolic
+  kan/utils.py     in fit_params
+      post_fun = fun(a_grid[None,:,:] * x[:,None,None] + b_grid[None,:,:])</code></pre>
+
+<div class="callout caution">
+  <p><strong>Caution:</strong> because training finishes before the failure, the saved checkpoint and the loss curves both look healthy. Nothing is wrong with the trained model. Only the interpretability step fails, so the run produces no equations, no scatter plot, and no network graph.</p>
+</div>
+
+<h3>Cause</h3>
+
+<p><code>auto_symbolic()</code> fits each edge from the activations that a forward pass caches. For every candidate function it sweeps the affine constants <em>a</em> and <em>b</em> — fitting the form <code>c·fun(a·x + b) + d</code> — across a 101 × 101 grid, evaluated at every cached row. The intermediate tensor it builds therefore has shape <code>n_rows × 101 × 101</code>.</p>
+
+<p>At the full training split, that is:</p>
+
+<pre><code>96,000 × 101 × 101 × 4 bytes = 3.92 GB</code></pre>
+
+<p>which matches the <code>3917479936 bytes</code> in the error message exactly. pykan rebuilds that tensor three times per edge, because the sweep iterates to narrow its search range — and it does so for every candidate function on every edge. A 16 GB card fills before the first edge finishes fitting.</p>
+
+<p>This is a scaling limit rather than a bug. pykan's own examples fit symbolic functions against a few hundred to a few thousand samples, where the same tensor is a few megabytes.</p>
+
+<h3>Fix</h3>
+
+<p>The sweep exists only to pin down two affine constants for a one-dimensional curve. A few thousand rows determine those constants, and the resulting R², to far more precision than the <code>SYMBOLIC_R2_MIN</code> threshold of 0.9 can resolve. <code>evaluate.py</code> now runs the cached forward pass against a fixed subsample rather than the full split:</p>
+
+<pre><code>fit_input = dataset['train_input']
+if fit_input.shape[0] > cfg.SYMBOLIC_FIT_SAMPLES:
+    gen = torch.Generator().manual_seed(cfg.SEED)
+    idx = torch.randperm(fit_input.shape[0], generator=gen)[:cfg.SYMBOLIC_FIT_SAMPLES]
+    fit_input = fit_input[idx.to(fit_input.device)]
+with torch.no_grad():
+    model(fit_input)</code></pre>
+
+<p>With the default <code>SYMBOLIC_FIT_SAMPLES = 4000</code>, the allocation drops from 3.92 GB to roughly 163 MB. The subsample is drawn from a generator seeded with <code>config.SEED</code>, so runs stay reproducible.</p>
+
+<h3>What the fix does not change</h3>
+
+<table>
+  <tr><th style="width:44%">Step</th><th>Data it uses</th></tr>
+  <tr><td>All four training stages</td><td>The full 96,000-row training split. Unchanged.</td></tr>
+  <tr><td>Affine sweep inside <code>auto_symbolic()</code></td><td>The 4,000-row subsample. <strong>This is the only change.</strong></td></tr>
+  <tr><td>Retuning after snapping</td><td>The full training split. Unchanged.</td></tr>
+  <tr><td><code>eval_model()</code> and every reported RMSE</td><td>The full 24,000-row test split. Unchanged.</td></tr>
+</table>
+
+<div class="callout">
+  <p><strong>Note:</strong> <code>SYMBOLIC_FIT_SAMPLES</code> does not need to grow when you raise <code>N_EXPS</code>. It controls the precision of a two-parameter curve fit, not the amount of chemistry the model learns, and raising it increases memory use quadratically against no measurable gain in fit quality.</p>
+</div>
+
+<h2>Resolved issue: pole functions in the symbolic library produced NaNs</h2>
+
+<p>Fixing the memory failure exposed a second problem underneath it. Because <code>auto_symbolic()</code> had never once run to completion, the retuning step that follows it had never executed either. The first time it did, every loss it reported was NaN.</p>
+
+<h3>Symptom</h3>
+
+<p>Symbolic fitting completes and reports sensible per-edge decisions, then the retuning run prints:</p>
+
+<pre><code>train_loss: nan | test_loss: nan | reg: 0.00e+00</code></pre>
+
+<p>Every downstream number inherits the NaN, so the post-snapping RMSE table, the scatter plot, and the saved predictions are all meaningless even though the run finishes without raising an error.</p>
+
+<h3>Cause</h3>
+
+<p>An audit of what the 494 fitted edges actually snapped to found the culprit:</p>
+
+<table>
+  <tr><th style="width:24%">Function</th><th style="width:16%">Edges</th><th>Finite across all real inputs?</th></tr>
+  <tr><td><code>0</code> (pruned edges)</td><td>479</td><td>Yes</td></tr>
+  <tr><td><code>x</code></td><td>10</td><td>Yes</td></tr>
+  <tr><td><code>sin</code>, <code>cos</code></td><td>3</td><td>Yes</td></tr>
+  <tr><td><code>1/x^2</code></td><td>2</td><td><strong>No — pole at x = 0</strong></td></tr>
+</table>
+
+<p>Two edges snapped to <code>1/x²</code>. Inputs are standardized, which centers activations on zero, so values near zero are not a rare edge case — they are the middle of the distribution. As soon as such an edge evaluates near zero it returns infinity, and the NaN propagates through every downstream layer.</p>
+
+<p>pykan's default library contains a whole family of functions that cannot survive this data:</p>
+
+<ul>
+  <li><strong>Poles at zero:</strong> <code>1/x</code>, <code>1/x^2</code>, <code>1/x^3</code>, <code>1/x^4</code>, <code>1/x^5</code>, <code>1/sqrt(x)</code>.</li>
+  <li><strong>Undefined for negative inputs:</strong> <code>log</code>, <code>sqrt</code>, <code>x^0.5</code>, <code>x^1.5</code>.</li>
+  <li><strong>Poles at π/2:</strong> <code>tan</code>.</li>
+  <li><strong>Undefined beyond |x| &gt; 1:</strong> <code>arcsin</code>, <code>arccos</code>, <code>arctanh</code>.</li>
+</ul>
+
+<p>Standardized activations take both signs and span well past 1, so each of those is guaranteed to be evaluated somewhere it blows up.</p>
+
+<h3>Fix</h3>
+
+<p><code>config.SYMBOLIC_LIB</code> now restricts the candidate set to functions that are finite everywhere on the real line, and <code>evaluate.py</code> passes it to <code>auto_symbolic()</code>:</p>
+
+<pre><code>SYMBOLIC_LIB = ['0', 'x', 'x^2', 'x^3', 'x^4', 'x^5',
+                'exp', 'sin', 'cos', 'tanh', 'gaussian', 'abs']</code></pre>
+
+<div class="callout key">
+  <p><strong>This is not a compromise on the science.</strong> A function with a pole at zero cannot be a valid description of chemistry whose inputs are centered on zero — it would predict an infinite tendency for an ordinary concentration. Excluding those functions removes candidates that were never physically admissible, rather than trading accuracy for stability. <code>exp</code> is retained deliberately, since exponential forms are chemically meaningful in rate laws and <code>exp</code> has no pole.</p>
+</div>
+
+<h2>How the three known failure modes differ</h2>
+
+<p>These three problems are easy to confuse, because all of them ultimately show up as either a NaN or a crash. They occur at different stages and have different causes.</p>
+
+<table>
+  <tr><th style="width:20%">Issue</th><th style="width:24%">Where it fails</th><th style="width:12%">Nature</th><th>Fix</th></tr>
+  <tr>
+    <td>Rank-deficient <code>lstsq</code></td>
+    <td>During training, at the first <code>refine()</code> after pruning</td>
+    <td>Numerical</td>
+    <td>Silently produces NaNs on CUDA only, because that path lacks a rank-safe solver. Fixed by <code>kan_patches.py</code>.</td>
+  </tr>
+  <tr>
+    <td>Affine sweep allocation</td>
+    <td>After training, inside <code>auto_symbolic()</code></td>
+    <td>Memory</td>
+    <td>Fails loudly on any GPU once the sample count is large. Fixed by <code>SYMBOLIC_FIT_SAMPLES</code>.</td>
+  </tr>
+  <tr>
+    <td>Pole functions</td>
+    <td>After snapping, during retuning</td>
+    <td>Numerical</td>
+    <td>Produces NaN without raising an error, so the run appears to succeed. Fixed by <code>SYMBOLIC_LIB</code>.</td>
+  </tr>
+</table>
+
+<div class="callout caution">
+  <p><strong>Caution:</strong> the third failure mode is the dangerous one, because it does not crash. If a future change reintroduces a pole-prone function, the pipeline will finish normally and write a full set of plots and predictions that are entirely NaN. Check the reported RMSE before trusting a run's output.</p>
+</div>
+
+
+<h2>Glossary</h2>
+
+<table>
+  <tr><th style="width:26%">Term</th><th>Definition</th></tr>
+  <tr><td><strong>Tendency</strong></td><td>How much a species' concentration changes over one five-minute step. This is the model's output.</td></tr>
+  <tr><td><strong>ppb</strong></td><td>Parts per billion. The concentration unit used throughout.</td></tr>
+  <tr><td><strong>KAN</strong></td><td>Kolmogorov-Arnold Network. A network that places a learnable spline on every edge instead of a fixed activation on every node.</td></tr>
+  <tr><td><strong>Spline</strong></td><td>A smooth curve defined by a small number of control points. The grid size sets how many.</td></tr>
+  <tr><td><strong>Grid</strong></td><td>The resolution of a spline. A higher grid value means more control points and a more flexible curve.</td></tr>
+  <tr><td><strong>Pruning</strong></td><td>Removing edges and nodes whose contribution falls below a threshold.</td></tr>
+  <tr><td><strong>Sparsification</strong></td><td>Penalizing edge activations so the signal concentrates onto fewer edges, making pruning effective.</td></tr>
+  <tr><td><strong>Symbolic fitting</strong></td><td>Replacing a learned spline with a closed-form function when the fit quality clears a threshold.</td></tr>
+  <tr><td><strong>LBFGS</strong></td><td>A quasi-Newton optimizer that uses curvature information. It requires the full batch rather than mini-batches.</td></tr>
+  <tr><td><strong>RMSE</strong></td><td>Root-mean-square error. Average prediction error in the original units, so lower is better.</td></tr>
+  <tr><td><strong>R²</strong></td><td>The fraction of variation the model explains. 1.0 is perfect, 0.0 matches guessing the mean, and negative is worse than guessing the mean.</td></tr>
+</table>
+
+</body>
+</html>

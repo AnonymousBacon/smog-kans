@@ -1,0 +1,21 @@
+{
+  "width_hidden": [
+    1
+  ],
+  "grid": 3,
+  "k": 3,
+  "grid_eps": 0.0,
+  "grid_update_every": 10,
+  "grid_update_until": 50,
+  "lamb": 0.1,
+  "prune": false,
+  "prune_node_th": 0.01,
+  "prune_edge_th": 0.03,
+  "refine": [],
+  "steps": 200,
+  "eval_every": 10,
+  "n_exps": 3000,
+  "dtype": "float32",
+  "seed": 42,
+  "name": "gu50_reg1e-1"
+}

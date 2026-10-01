@@ -1,0 +1,122 @@
+device: cuda (NVIDIA GeForce RTX 4060 Ti)
+patched pykan curve2coef (rank-safe ridge solve; cuda gels workaround)
+
+======================================================================
+checkpoint: model/1.25
+======================================================================
+width: [[11, 0], [12, 0], [11, 0], [12, 0], [11, 0]]
+edges with a symbolic function: 492
+/venv/main/lib/python3.12/site-packages/sympy/core/sympify.py:475: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:822.)
+  return sympify(float(a))
+
+d[O3]/dt =
+    0.383893461897969
+
+d[NO]/dt =
+    0.732665382791311
+
+d[NO2]/dt =
+    -0.351984584704041
+
+d[HCHO]/dt =
+    -5.44701076671481
+
+d[HO2]/dt =
+    -0.927222017198801
+
+d[H2O2]/dt =
+    1.05872992379591
+
+d[OH]/dt =
+    0.0340890749357641
+
+d[ALD2]/dt =
+    1.06859658492476
+
+d[MGLY]/dt =
+    -3.16457436543543
+
+d[MCO3]/dt =
+    -0.954475098289549
+
+d[PAN]/dt =
+    -1.59270575642586
+
+======================================================================
+checkpoint: model/1.24
+======================================================================
+width: [[11, 0], [12, 0], [11, 0], [12, 0], [11, 0]]
+edges with a symbolic function: 492
+
+d[O3]/dt =
+    0.602521896362305
+
+d[NO]/dt =
+    0.690715253353119
+
+d[NO2]/dt =
+    -0.643413484096527
+
+d[HCHO]/dt =
+    -4.87950897216797
+
+d[HO2]/dt =
+    -0.956371486186981
+
+d[H2O2]/dt =
+    1.09660387039185
+
+d[OH]/dt =
+    4.88758087158203e-6
+
+d[ALD2]/dt =
+    1.06862115859985
+
+d[MGLY]/dt =
+    -2.93362242567439
+
+d[MCO3]/dt =
+    -1.02366256713867
+
+d[PAN]/dt =
+    -1.11993378400803
+
+======================================================================
+checkpoint: /workspace/smog-kans/model/smog_kan
+======================================================================
+width: [[11, 0], [12, 0], [11, 0], [12, 0], [11, 0]]
+edges with a symbolic function: 0
+
+d[O3]/dt =
+    0
+
+d[NO]/dt =
+    0
+
+d[NO2]/dt =
+    0
+
+d[HCHO]/dt =
+    0
+
+d[HO2]/dt =
+    0
+
+d[H2O2]/dt =
+    0
+
+d[OH]/dt =
+    0
+
+d[ALD2]/dt =
+    0
+
+d[MGLY]/dt =
+    0
+
+d[MCO3]/dt =
+    0
+
+d[PAN]/dt =
+    0

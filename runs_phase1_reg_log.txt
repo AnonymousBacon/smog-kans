@@ -1,0 +1,133 @@
+device: cpu
+patched pykan curve2coef (rank-safe ridge solve; cuda gels workaround)
+Loaded 39000 rows
+Species (11): ['O3', 'NO', 'NO2', 'HCHO', 'HO2', 'H2O2', 'OH', 'ALD2', 'MGLY', 'MCO3', 'PAN']
+X: (36000, 11)  |  D: (36000, 11)
+experiments: 3000  train/val/test: [2100, 450, 450]  device: cpu  threads: 5
+
+=== min_reg0 ===
+{"width_hidden": [1], "grid": 3, "k": 3, "grid_eps": 0.0, "grid_update_every": 10, "grid_update_until": 50, "lamb": 0.0, "prune": false, "prune_node_th": 0.01, "prune_edge_th": 0.03, "refine": [5, 10], "steps": 200, "eval_every": 10, "n_exps": 3000, "dtype": "float32", "seed": 42, "name": "min_reg0"}
+  [train] step   10/66  train_mse=0.49861  reg=0.000e+00  val_mse=0.43565  0.414s/step
+  [train] step   20/66  train_mse=0.47852  reg=0.000e+00  val_mse=0.44903  0.393s/step
+  [train] step   30/66  train_mse=0.46414  reg=0.000e+00  val_mse=0.44197  0.373s/step
+  [train] step   40/66  train_mse=0.46605  reg=0.000e+00  val_mse=0.44798  0.403s/step
+  [train] step   50/66  train_mse=0.45379  reg=0.000e+00  val_mse=0.43476  0.373s/step
+  [train] step   60/66  train_mse=0.44200  reg=0.000e+00  val_mse=0.44733  0.388s/step
+  [train] step   66/66  train_mse=0.43843  reg=0.000e+00  val_mse=0.44022  0.366s/step
+  [grid5] step   10/66  train_mse=0.44302  reg=0.000e+00  val_mse=0.43450  0.319s/step
+  [grid5] step   20/66  train_mse=0.43029  reg=0.000e+00  val_mse=0.42626  0.360s/step
+  [grid5] step   30/66  train_mse=0.42412  reg=0.000e+00  val_mse=0.42081  0.326s/step
+  [grid5] step   40/66  train_mse=0.42029  reg=0.000e+00  val_mse=0.41758  0.357s/step
+  [grid5] step   50/66  train_mse=0.41767  reg=0.000e+00  val_mse=0.41448  0.334s/step
+  [grid5] step   60/66  train_mse=0.41482  reg=0.000e+00  val_mse=0.41215  0.297s/step
+  [grid5] step   66/66  train_mse=0.41431  reg=0.000e+00  val_mse=0.41160  0.307s/step
+  [grid10] step   10/66  train_mse=0.40488  reg=0.000e+00  val_mse=0.40195  0.537s/step
+  [grid10] step   20/66  train_mse=0.39727  reg=0.000e+00  val_mse=0.39265  0.541s/step
+  [grid10] step   30/66  train_mse=0.39248  reg=0.000e+00  val_mse=0.38393  0.514s/step
+  [grid10] step   40/66  train_mse=0.38936  reg=0.000e+00  val_mse=0.38054  0.543s/step
+  [grid10] step   50/66  train_mse=0.38810  reg=0.000e+00  val_mse=0.37855  0.552s/step
+  [grid10] step   60/66  train_mse=0.38635  reg=0.000e+00  val_mse=0.37732  0.576s/step
+  [grid10] step   66/66  train_mse=0.38545  reg=0.000e+00  val_mse=0.37623  0.570s/step
+  done: 86.8s  0.436s/step  best_val=0.37623  test_r2_mean=0.564
+
+=== min_reg1e-5 ===
+{"width_hidden": [1], "grid": 3, "k": 3, "grid_eps": 0.0, "grid_update_every": 10, "grid_update_until": 50, "lamb": 1e-05, "prune": false, "prune_node_th": 0.01, "prune_edge_th": 0.03, "refine": [5, 10], "steps": 200, "eval_every": 10, "n_exps": 3000, "dtype": "float32", "seed": 42, "name": "min_reg1e-5"}
+  [train] step   10/66  train_mse=0.50357  reg=1.866e+01  val_mse=0.44012  0.448s/step
+  [train] step   20/66  train_mse=0.49288  reg=1.927e+01  val_mse=0.42848  0.399s/step
+  [train] step   30/66  train_mse=0.48947  reg=1.887e+01  val_mse=0.42624  0.426s/step
+  [train] step   40/66  train_mse=0.48745  reg=2.046e+01  val_mse=0.42355  0.420s/step
+  [train] step   50/66  train_mse=0.48617  reg=2.011e+01  val_mse=0.42269  0.402s/step
+  [train] step   60/66  train_mse=0.48440  reg=1.985e+01  val_mse=0.42033  0.448s/step
+  [train] step   66/66  train_mse=0.48382  reg=1.954e+01  val_mse=0.41984  0.448s/step
+  [grid5] step   10/66  train_mse=0.47298  reg=1.861e+01  val_mse=0.41034  0.359s/step
+  [grid5] step   20/66  train_mse=0.47045  reg=1.745e+01  val_mse=0.40721  0.386s/step
+  [grid5] step   30/66  train_mse=0.46901  reg=1.683e+01  val_mse=0.40457  0.354s/step
+  [grid5] step   40/66  train_mse=0.46874  reg=1.661e+01  val_mse=0.40434  0.383s/step
+  [grid5] step   50/66  train_mse=0.46916  reg=1.677e+01  val_mse=0.40505  0.384s/step
+  [grid5] step   60/66  train_mse=0.46794  reg=1.622e+01  val_mse=0.40321  0.366s/step
+  [grid5] step   66/66  train_mse=0.46751  reg=1.609e+01  val_mse=0.40250  0.368s/step
+  [grid10] step   10/66  train_mse=0.45133  reg=1.735e+01  val_mse=0.38302  0.599s/step
+  [grid10] step   20/66  train_mse=0.44947  reg=1.713e+01  val_mse=0.38049  0.636s/step
+  [grid10] step   30/66  train_mse=0.44892  reg=1.797e+01  val_mse=0.37938  0.766s/step
+  [grid10] step   40/66  train_mse=0.44869  reg=1.746e+01  val_mse=0.37895  0.581s/step
+  [grid10] step   50/66  train_mse=0.44852  reg=1.798e+01  val_mse=0.37881  0.568s/step
+  [grid10] step   60/66  train_mse=0.44735  reg=1.799e+01  val_mse=0.37678  0.616s/step
+  [grid10] step   66/66  train_mse=0.44704  reg=1.791e+01  val_mse=0.37661  0.563s/step
+  done: 94.3s  0.475s/step  best_val=0.37661  test_r2_mean=0.560
+
+=== min_reg1e-4 ===
+{"width_hidden": [1], "grid": 3, "k": 3, "grid_eps": 0.0, "grid_update_every": 10, "grid_update_until": 50, "lamb": 0.0001, "prune": false, "prune_node_th": 0.01, "prune_edge_th": 0.03, "refine": [5, 10], "steps": 200, "eval_every": 10, "n_exps": 3000, "dtype": "float32", "seed": 42, "name": "min_reg1e-4"}
+  [train] step   10/66  train_mse=0.50027  reg=2.030e+01  val_mse=0.43701  0.448s/step
+  [train] step   20/66  train_mse=0.49119  reg=1.954e+01  val_mse=0.42708  0.448s/step
+  [train] step   30/66  train_mse=0.48814  reg=1.902e+01  val_mse=0.42465  0.427s/step
+  [train] step   40/66  train_mse=0.48664  reg=1.992e+01  val_mse=0.42261  0.474s/step
+  [train] step   50/66  train_mse=0.48620  reg=1.989e+01  val_mse=0.42299  0.474s/step
+  [train] step   60/66  train_mse=0.48429  reg=1.967e+01  val_mse=0.42100  0.460s/step
+  [train] step   66/66  train_mse=0.48317  reg=1.939e+01  val_mse=0.41899  0.464s/step
+  [grid5] step   10/66  train_mse=0.47271  reg=1.856e+01  val_mse=0.41030  0.362s/step
+  [grid5] step   20/66  train_mse=0.47081  reg=1.722e+01  val_mse=0.40714  0.381s/step
+  [grid5] step   30/66  train_mse=0.47036  reg=1.710e+01  val_mse=0.40600  0.388s/step
+  [grid5] step   40/66  train_mse=0.47110  reg=1.680e+01  val_mse=0.40708  0.375s/step
+  [grid5] step   50/66  train_mse=0.47292  reg=1.692e+01  val_mse=0.40938  0.392s/step
+  [grid5] step   60/66  train_mse=0.47143  reg=1.656e+01  val_mse=0.40729  0.362s/step
+  [grid5] step   66/66  train_mse=0.47089  reg=1.675e+01  val_mse=0.40690  0.345s/step
+  [grid10] step   10/66  train_mse=0.44957  reg=1.785e+01  val_mse=0.38116  0.659s/step
+  [grid10] step   20/66  train_mse=0.44849  reg=1.776e+01  val_mse=0.37852  0.580s/step
+  [grid10] step   30/66  train_mse=0.44833  reg=1.794e+01  val_mse=0.37850  0.600s/step
+  [grid10] step   40/66  train_mse=0.44796  reg=1.791e+01  val_mse=0.37775  0.659s/step
+  [grid10] step   50/66  train_mse=0.44793  reg=1.792e+01  val_mse=0.37810  0.642s/step
+  [grid10] step   60/66  train_mse=0.44577  reg=1.718e+01  val_mse=0.37485  0.609s/step
+  [grid10] step   66/66  train_mse=0.44489  reg=1.696e+01  val_mse=0.37424  0.610s/step
+  done: 98.0s  0.493s/step  best_val=0.37424  test_r2_mean=0.565
+
+=== min_reg1e-3 ===
+{"width_hidden": [1], "grid": 3, "k": 3, "grid_eps": 0.0, "grid_update_every": 10, "grid_update_until": 50, "lamb": 0.001, "prune": false, "prune_node_th": 0.01, "prune_edge_th": 0.03, "refine": [5, 10], "steps": 200, "eval_every": 10, "n_exps": 3000, "dtype": "float32", "seed": 42, "name": "min_reg1e-3"}
+  [train] step   10/66  train_mse=0.50301  reg=1.748e+01  val_mse=0.43972  0.454s/step
+  [train] step   20/66  train_mse=0.49388  reg=1.731e+01  val_mse=0.43035  0.438s/step
+  [train] step   30/66  train_mse=0.48964  reg=1.743e+01  val_mse=0.42657  0.429s/step
+  [train] step   40/66  train_mse=0.48646  reg=1.802e+01  val_mse=0.42287  0.460s/step
+  [train] step   50/66  train_mse=0.48423  reg=1.782e+01  val_mse=0.41994  0.448s/step
+  [train] step   60/66  train_mse=0.48370  reg=1.775e+01  val_mse=0.41968  0.461s/step
+  [train] step   66/66  train_mse=0.48362  reg=1.769e+01  val_mse=0.41959  0.481s/step
+  [grid5] step   10/66  train_mse=0.47380  reg=1.648e+01  val_mse=0.41033  0.480s/step
+  [grid5] step   20/66  train_mse=0.47208  reg=1.610e+01  val_mse=0.40872  0.528s/step
+  [grid5] step   30/66  train_mse=0.47232  reg=1.598e+01  val_mse=0.40882  0.490s/step
+  [grid5] step   40/66  train_mse=0.47223  reg=1.602e+01  val_mse=0.40887  0.473s/step
+  [grid5] step   50/66  train_mse=0.47254  reg=1.599e+01  val_mse=0.40933  0.458s/step
+  [grid5] step   60/66  train_mse=0.47161  reg=1.603e+01  val_mse=0.40808  0.560s/step
+  [grid5] step   66/66  train_mse=0.47091  reg=1.580e+01  val_mse=0.40633  0.496s/step
+  [grid10] step   10/66  train_mse=0.45431  reg=1.593e+01  val_mse=0.38721  0.641s/step
+  [grid10] step   20/66  train_mse=0.45096  reg=1.585e+01  val_mse=0.38179  0.621s/step
+  [grid10] step   30/66  train_mse=0.45131  reg=1.575e+01  val_mse=0.38203  0.586s/step
+  [grid10] step   40/66  train_mse=0.45120  reg=1.569e+01  val_mse=0.38195  0.665s/step
+  [grid10] step   50/66  train_mse=0.45119  reg=1.567e+01  val_mse=0.38198  0.612s/step
+  [grid10] step   60/66  train_mse=0.44992  reg=1.551e+01  val_mse=0.37982  0.585s/step
+  [grid10] step   66/66  train_mse=0.44911  reg=1.544e+01  val_mse=0.37864  0.602s/step
+  done: 104.7s  0.527s/step  best_val=0.37864  test_r2_mean=0.560
+
+=== min_reg1e-2 ===
+{"width_hidden": [1], "grid": 3, "k": 3, "grid_eps": 0.0, "grid_update_every": 10, "grid_update_until": 50, "lamb": 0.01, "prune": false, "prune_node_th": 0.01, "prune_edge_th": 0.03, "refine": [5, 10], "steps": 200, "eval_every": 10, "n_exps": 3000, "dtype": "float32", "seed": 42, "name": "min_reg1e-2"}
+  [train] step   10/66  train_mse=0.99923  reg=2.515e+00  val_mse=0.93048  0.140s/step
+  [train] step   20/66  train_mse=0.99977  reg=2.227e+00  val_mse=0.93110  0.141s/step
+  [train] step   30/66  train_mse=0.99977  reg=2.228e+00  val_mse=0.93110  0.250s/step
+  [train] step   40/66  train_mse=0.99977  reg=2.228e+00  val_mse=0.93110  0.141s/step
+  [train] step   50/66  train_mse=0.99977  reg=2.228e+00  val_mse=0.93110  0.298s/step
+  [train] step   60/66  train_mse=0.99977  reg=2.228e+00  val_mse=0.93110  0.295s/step
+  [train] step   66/66  train_mse=0.99977  reg=2.228e+00  val_mse=0.93110  0.293s/step
+  [grid5] step   10/66  train_mse=0.99908  reg=2.238e+00  val_mse=0.93046  0.202s/step
+  [grid5] step   20/66  train_mse=0.99908  reg=2.234e+00  val_mse=0.93046  0.256s/step
+  [grid5] step   30/66  train_mse=0.99893  reg=2.238e+00  val_mse=0.93030  0.202s/step
+  [grid5] step   40/66  train_mse=0.99899  reg=2.233e+00  val_mse=0.93034  0.283s/step
+  [grid5] step   50/66  train_mse=0.99899  reg=2.233e+00  val_mse=0.93034  0.204s/step
+  [grid5] step   60/66  train_mse=0.99899  reg=2.233e+00  val_mse=0.93034  0.203s/step
+  [grid5] step   66/66  train_mse=0.99899  reg=2.233e+00  val_mse=0.93034  0.201s/step
+  [grid10] step   10/66  train_mse=0.99893  reg=2.238e+00  val_mse=0.93030  0.167s/step
+  [grid10] step   20/66  train_mse=0.99893  reg=2.238e+00  val_mse=0.93030  0.390s/step
+  [grid10] step   30/66  train_mse=0.99893  reg=2.238e+00  val_mse=0.93030  0.146s/step
+  [grid10] step   40/66  train_mse=0.99893  reg=2.238e+00  val_mse=0.93030  0.139s/step
+  [grid10] step   50/66  train_mse=0.99893  reg=2.238e+00  val_mse=0.93030  0.411s/step
+  [grid10] step   60/66  train_mse=0.99893  reg=2.238e+00  val_mse=0.93030  0.417s/step
+  [grid10] step   66/66  train_mse=0.99893  reg=2.238e+00  val_mse=0.93030  0.412s/step
+  done: 58.8s  0.295s/step  best_val=0.93030  test_r2_mean=-0.001
+
+all runs written to runs/phase1_reg/cpu

@@ -31,8 +31,22 @@ def run_symbolic_fitting(model, dataset, scalerY, species_names, mse, rmse_per, 
 
     model.save_act         = True
     model.symbolic_enabled = True
+
+    # auto_symbolic fits each edge from the activations this forward pass caches.
+    # for every candidate function it sweeps the affine constants over a 101x101
+    # grid evaluated at every cached row, so pykan holds an
+    # n_rows x 101 x 101 tensor at once -- 3.65 gib at the full 96k rows, and it
+    # rebuilds that three times per edge, so the sweep ooms before the first edge
+    # is fitted. the sweep only has to pin down a and b for a 1d curve, which a
+    # few thousand rows already do to far more precision than the r2 threshold
+    # resolves, so feed it a fixed subsample.
+    fit_input = dataset['train_input']
+    if fit_input.shape[0] > cfg.SYMBOLIC_FIT_SAMPLES:
+        gen = torch.Generator().manual_seed(cfg.SEED)
+        idx = torch.randperm(fit_input.shape[0], generator=gen)[:cfg.SYMBOLIC_FIT_SAMPLES]
+        fit_input = fit_input[idx.to(fit_input.device)]
     with torch.no_grad():
-        model(dataset['train_input'])
+        model(fit_input)
 
     # tee auto_symbolic's per-edge decisions: they stream to the console as usual
     # and are also kept so the snapping figure can be built from them
@@ -49,7 +63,7 @@ def run_symbolic_fitting(model, dataset, scalerY, species_names, mse, rmse_per, 
             _real_stdout.flush()
 
     with contextlib.redirect_stdout(_Tee()):
-        model.auto_symbolic(r2_threshold=cfg.SYMBOLIC_R2_MIN)
+        model.auto_symbolic(lib=cfg.SYMBOLIC_LIB, r2_threshold=cfg.SYMBOLIC_R2_MIN)
 
     model.fit(dataset, opt="LBFGS", steps=cfg.SYMBOLIC_FIT_STEPS, lamb=0, loss_fn=weighted_mse,
               update_grid=False)

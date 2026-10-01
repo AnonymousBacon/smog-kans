@@ -1,0 +1,42 @@
+# phase 2: full width, 10k experiments, unfriendly split, same seed and step budget.
+# lamb* is 1e-4 -- phase1_reg put every lamb <= 1e-3 inside the seed noise floor and
+# showed 1e-2 collapsing the model to the mean, so 1e-4 is the largest defensible value.
+# recipe is the validated minimal model (gu50 + refine 3->5->10) at full width; 2a/2b/2c
+# differ only in lamb and prune.
+defaults:
+  width_hidden: [16, 16, 16]
+  grid: 3
+  k: 3
+  grid_eps: 0.0
+  grid_update_every: 10
+  grid_update_until: 50
+  lamb: 0.0
+  prune: false
+  prune_node_th: 1.0e-2
+  prune_edge_th: 3.0e-2
+  refine: [5, 10]
+  steps: 200
+  eval_every: 10
+  n_exps: 10000
+  dtype: float32
+  seed: 42
+  max_z: 20.0   # drops the 8 runaway-OH trajectories; without it val is 13x test
+
+runs:
+  # 2a: no l1 at all
+  - name: 2a_no_l1
+
+  # 2b: l1 from step 0 to the end, refine stages included
+  - name: 2b_l1
+    lamb: 1.0e-4
+
+  # 2c: l1, then prune, then retrain the pruned net unregularized
+  - name: 2c_l1_prune
+    lamb: 1.0e-4
+    prune: true
+
+  # not in the roadmap: phase1_width found capacity saturates at one hidden layer of
+  # 16, so the roadmap's three hidden layers are past the optimum. same recipe, 2.5x
+  # fewer parameters
+  - name: 2d_w16
+    width_hidden: [16]

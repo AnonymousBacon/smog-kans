@@ -1,0 +1,70 @@
+# tuning the minimal [11, 1, 11] model on 3k experiments. no pruning; lamb is 0 or a single value
+defaults:
+  width_hidden: [1]
+  grid: 3
+  k: 3
+  grid_eps: 0.0
+  grid_update_every: 0
+  grid_update_until: 0
+  lamb: 0.0
+  prune: false
+  prune_node_th: 1.0e-2
+  prune_edge_th: 3.0e-2
+  refine: []
+  steps: 200
+  eval_every: 10
+  n_exps: 3000
+  dtype: float32
+  seed: 42
+
+runs:
+  # noise floor: same data split, different init
+  - name: base_s42
+  - name: base_s0
+    seed: 0
+  - name: base_s1
+    seed: 1
+
+  # refit the grid during training (pykan fit() default: every 10 steps until step 50)
+  - name: gu50
+    grid_update_every: 10
+    grid_update_until: 50
+  - name: gu200
+    grid_update_every: 10
+    grid_update_until: 200
+
+  # uniform grid instead of quantile-placed knots
+  - name: gu50_uniform
+    grid_update_every: 10
+    grid_update_until: 50
+    grid_eps: 1.0
+
+  # finer fixed grids
+  - name: gu50_g5
+    grid: 5
+    grid_update_every: 10
+    grid_update_until: 50
+  - name: gu50_g10
+    grid: 10
+    grid_update_every: 10
+    grid_update_until: 50
+  - name: gu50_g20
+    grid: 20
+    grid_update_every: 10
+    grid_update_until: 50
+
+  # simple refinement on top of grid updates
+  - name: gu50_refine
+    grid_update_every: 10
+    grid_update_until: 50
+    refine: [5, 10]
+
+  # simple regularization, on from step 0
+  - name: gu50_reg1e-2
+    grid_update_every: 10
+    grid_update_until: 50
+    lamb: 1.0e-2
+  - name: gu50_reg1e-1
+    grid_update_every: 10
+    grid_update_until: 50
+    lamb: 1.0e-1

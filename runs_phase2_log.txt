@@ -1,0 +1,71 @@
+device: cpu
+patched pykan curve2coef (rank-safe ridge solve; cuda gels workaround)
+Loaded 130000 rows
+Species (11): ['O3', 'NO', 'NO2', 'HCHO', 'HO2', 'H2O2', 'OH', 'ALD2', 'MGLY', 'MCO3', 'PAN']
+X: (120000, 11)  |  D: (120000, 11)
+experiments: 10000  train/val/test: [7000, 1500, 1500]  device: cpu  threads: 5
+
+=== 2a_no_l1 ===
+{"width_hidden": [16, 16, 16], "grid": 3, "k": 3, "grid_eps": 0.0, "grid_update_every": 10, "grid_update_until": 50, "lamb": 0.0, "prune": false, "prune_node_th": 0.01, "prune_edge_th": 0.03, "refine": [5, 10], "steps": 120, "eval_every": 10, "n_exps": 10000, "dtype": "float32", "seed": 42, "max_z": 20.0, "name": "2a_no_l1"}
+  dropped outlier experiments (|z|>20.0): train 5, val 2, test 1
+  [train] step   10/40  train_mse=0.02551  reg=0.000e+00  val_mse=0.02411  15.776s/step
+  [train] step   20/40  train_mse=0.01301  reg=0.000e+00  val_mse=0.01346  15.867s/step
+  [train] step   30/40  train_mse=0.00864  reg=0.000e+00  val_mse=0.01288  16.437s/step
+  [train] step   40/40  train_mse=0.00653  reg=0.000e+00  val_mse=0.00999  14.518s/step
+  [grid5] step   10/40  train_mse=0.00430  reg=0.000e+00  val_mse=0.00791  16.924s/step
+  [grid5] step   20/40  train_mse=0.00332  reg=0.000e+00  val_mse=0.00633  15.703s/step
+  [grid5] step   30/40  train_mse=0.00281  reg=0.000e+00  val_mse=0.00513  15.111s/step
+  [grid5] step   40/40  train_mse=0.00248  reg=0.000e+00  val_mse=0.00449  14.500s/step
+  [grid10] step   10/40  train_mse=0.00184  reg=0.000e+00  val_mse=0.00332  26.569s/step
+  [grid10] step   20/40  train_mse=0.00152  reg=0.000e+00  val_mse=0.00280  25.354s/step
+  [grid10] step   30/40  train_mse=0.00137  reg=0.000e+00  val_mse=0.00258  27.569s/step
+  [grid10] step   40/40  train_mse=0.00121  reg=0.000e+00  val_mse=0.00224  27.778s/step
+  done: 2358.8s  19.595s/step  best_val=0.00224  test_r2_mean=0.997
+
+=== 2b_l1 ===
+{"width_hidden": [16, 16, 16], "grid": 3, "k": 3, "grid_eps": 0.0, "grid_update_every": 10, "grid_update_until": 50, "lamb": 0.0001, "prune": false, "prune_node_th": 0.01, "prune_edge_th": 0.03, "refine": [5, 10], "steps": 120, "eval_every": 10, "n_exps": 10000, "dtype": "float32", "seed": 42, "max_z": 20.0, "name": "2b_l1"}
+  dropped outlier experiments (|z|>20.0): train 5, val 2, test 1
+  [train] step   10/40  train_mse=0.03025  reg=1.589e+02  val_mse=0.02852  31.560s/step
+  [train] step   20/40  train_mse=0.01523  reg=1.511e+02  val_mse=0.01416  35.478s/step
+  [train] step   30/40  train_mse=0.00926  reg=1.462e+02  val_mse=0.00934  37.666s/step
+  [train] step   40/40  train_mse=0.00692  reg=1.414e+02  val_mse=0.00853  35.944s/step
+  [grid5] step   10/40  train_mse=0.00488  reg=1.352e+02  val_mse=0.00638  33.843s/step
+  [grid5] step   20/40  train_mse=0.00403  reg=1.306e+02  val_mse=0.00585  32.733s/step
+  [grid5] step   30/40  train_mse=0.00365  reg=1.263e+02  val_mse=0.00555  31.524s/step
+  [grid5] step   40/40  train_mse=0.00337  reg=1.236e+02  val_mse=0.00479  33.169s/step
+  [grid10] step   10/40  train_mse=0.00268  reg=1.193e+02  val_mse=0.00408  42.789s/step
+  [grid10] step   20/40  train_mse=0.00248  reg=1.146e+02  val_mse=0.00381  47.016s/step
+  [grid10] step   30/40  train_mse=0.00221  reg=1.126e+02  val_mse=0.00363  47.314s/step
+  [grid10] step   40/40  train_mse=0.00220  reg=1.080e+02  val_mse=0.00385  45.459s/step
+  done: 4615.7s  38.409s/step  best_val=0.00363  test_r2_mean=0.996
+
+=== 2c_l1_prune ===
+{"width_hidden": [16, 16, 16], "grid": 3, "k": 3, "grid_eps": 0.0, "grid_update_every": 10, "grid_update_until": 50, "lamb": 0.0001, "prune": true, "prune_node_th": 0.01, "prune_edge_th": 0.03, "refine": [5, 10], "steps": 120, "eval_every": 10, "n_exps": 10000, "dtype": "float32", "seed": 42, "max_z": 20.0, "name": "2c_l1_prune"}
+  dropped outlier experiments (|z|>20.0): train 5, val 2, test 1
+  [train] step   10/30  train_mse=0.03025  reg=1.589e+02  val_mse=0.02852  34.448s/step
+  [train] step   20/30  train_mse=0.01523  reg=1.511e+02  val_mse=0.01416  34.453s/step
+  [train] step   30/30  train_mse=0.00926  reg=1.462e+02  val_mse=0.00934  37.943s/step
+saving model version 0.1
+  pruned width [[11, 0], [16, 0], [16, 0], [16, 0], [11, 0]] -> [[11, 0], [16, 0], [16, 0], [16, 0], [11, 0]]
+  [post_prune] step   10/30  train_mse=0.02550  reg=0.000e+00  val_mse=0.02632  36.547s/step
+  [post_prune] step   20/30  train_mse=0.01981  reg=0.000e+00  val_mse=0.02150  38.767s/step
+  [post_prune] step   30/30  train_mse=0.01751  reg=0.000e+00  val_mse=0.02057  36.123s/step
+  [grid5] non-finite loss at step 1, stopping stage
+  [grid10] non-finite loss at step 1, stopping stage
+  kan graph skipped: alpha (nan) is outside 0-1 range
+  done: 2335.4s  37.519s/step  best_val=0.00934  test_r2_mean=nan
+
+all runs written to runs/phase2/cpu
+device: cpu
+patched pykan curve2coef (rank-safe ridge solve; cuda gels workaround)
+Loaded 130000 rows
+Species (11): ['O3', 'NO', 'NO2', 'HCHO', 'HO2', 'H2O2', 'OH', 'ALD2', 'MGLY', 'MCO3', 'PAN']
+X: (120000, 11)  |  D: (120000, 11)
+experiments: 10000  train/val/test: [7000, 1500, 1500]  device: cpu  threads: 5
+
+=== 2d_w16 ===
+{"width_hidden": [16], "grid": 3, "k": 3, "grid_eps": 0.0, "grid_update_every": 10, "grid_update_until": 50, "lamb": 0.0, "prune": false, "prune_node_th": 0.01, "prune_edge_th": 0.03, "refine": [5, 10], "steps": 120, "eval_every": 10, "n_exps": 10000, "dtype": "float32", "seed": 42, "max_z": 20.0, "name": "2d_w16"}
+  dropped outlier experiments (|z|>20.0): train 5, val 2, test 1
+  [train] step   10/40  train_mse=0.03247  reg=0.000e+00  val_mse=0.02927  9.658s/step
+  [train] step   20/40  train_mse=0.02336  reg=0.000e+00  val_mse=0.02164  8.212s/step
+  [train] step   30/40  train_mse=0.01954  reg=0.000e+00  val_mse=0.01834  9.567s/step
