@@ -1,0 +1,45 @@
+defaults:
+  width_hidden: [1]
+  grid: 3
+  k: 3
+  lamb: 0.0
+  prune: false
+  prune_node_th: 1.0e-2
+  prune_edge_th: 3.0e-2
+  refine: []
+  steps: 200
+  eval_every: 10
+  n_exps: 10000
+  dtype: float32
+  seed: 42
+
+runs:
+  - name: 1a_base
+
+  - name: 1a_base_f64
+    dtype: float64
+
+  - name: 1a_exps1000
+    n_exps: 1000
+  - name: 1a_exps2000
+    n_exps: 2000
+  - name: 1a_exps5000
+    n_exps: 5000
+
+  - name: 1b_reg_1e-5
+    lamb: 1.0e-5
+  - name: 1b_reg_1e-4
+    lamb: 1.0e-4
+  - name: 1b_reg_1e-3
+    lamb: 1.0e-3
+
+  - name: 1b_grid
+    refine: [5, 10]
+
+  - name: 1b_width4
+    width_hidden: [4]
+
+  - name: 1b_width4_reg_prune
+    width_hidden: [4]
+    lamb: 1.0e-4
+    prune: true
