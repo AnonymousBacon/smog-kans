@@ -21,7 +21,7 @@ print = functools.partial(print, flush=True)
 SUMMARY_COLS = ["name", "device", "width_final", "n_params", "steps_run", "total_time_s",
                 "sec_per_step_mean", "closure_evals_mean", "final_train_mse", "best_val_mse",
                 "best_val_mse_uw", "test_mse_scaled", "test_r2_mean", "test_r2_mean_no_oh",
-                "test_r2_oh"]
+                "test_r2_oh", "test_r2_mean_11"]
 
 
 def load_runs(path, only):
@@ -43,8 +43,6 @@ def write_summary(results, out_dir):
     names = [m["name"] for m, _ in results]
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
 
-    # unweighted throughout: a weighted run's val_mse is on its own scale, so charting
-    # it against an unweighted run's would compare two different quantities
     ax = axes[0, 0]
     ax.barh(names, [m["best_val_mse_uw"] for m, _ in results])
     ax.set_xscale("log")
@@ -103,8 +101,20 @@ def main():
     out_dir = os.path.join(args.out, device.type)
     os.makedirs(out_dir, exist_ok=True)
 
+    # each run picks the 11- or 16-species view of the dataset, loaded once.
+    views = {}
+
+    def view(rc):
+        key = rc.get("species", "active11")
+        if key not in views:
+            views[key] = experiment.load_npz(args.data, all_species=key == "all16")[:4]
+        return views[key]
+
     if args.data:
         X, D, species, splits, n_max = experiment.load_npz(args.data)
+        views["active11"] = (X, D, species, splits)
+    elif any(r.get("species") == "all16" for r in runs):
+        raise ValueError("species: all16 needs --data (the 16 species come from the fixed dataset)")
     else:
         n_max = max(r["n_exps"] for r in runs)
         X, D, species = experiment.load_raw(args.csv, n_max)
@@ -116,6 +126,8 @@ def main():
     for rc in runs:
         print(f"\n=== {rc['name']} ===")
         print(json.dumps(rc))
+        if args.data:
+            X, D, species, splits = view(rc)
         metrics, log = experiment.run(rc, X, D, species, splits, device, os.path.join(out_dir, rc["name"]))
         print(f"  done: {metrics['total_time_s']:.1f}s  {metrics['sec_per_step_mean']:.3f}s/step  "
               f"best_val={metrics['best_val_mse']:.5f}  test_r2_mean={metrics['test_r2_mean']:.3f}")

@@ -1,11 +1,3 @@
-# same two models as deliverable.yaml at a longer budget. the 240-step A_unreg run was
-# still descending at the end (val fell 7.5% over its last 10 steps), so "trains
-# convergently" is not yet demonstrated. 400 steps = 133 per stage.
-#
-# recipe is deliberately unchanged otherwise: the 240-step curves came out smooth and
-# monotone, so the deliverable run stays on the validated settings. the grid-update
-# schedule question is being answered separately at 3k in ablate_gridupdate.yaml rather
-# than gambled on here.
 defaults:
   width_hidden: [16, 16, 16]
   grid: 3

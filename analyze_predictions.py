@@ -7,14 +7,13 @@ OUT_FOLDER = "/Users/baron/Desktop/smog_analysis"
 os.makedirs(OUT_FOLDER, exist_ok=True)
 
 data        = np.load(PRED_PATH, allow_pickle=True)
-predictions = data["predictions"]   # shape [N, 11]
-actuals     = data["actuals"]       # shape [N, 11]
-species     = list(data["species"]) # list of 11 species names
+predictions = data["predictions"]
+actuals     = data["actuals"]
+species     = list(data["species"])
 
 print(f"Loaded {predictions.shape[0]} test samples across {len(species)} species.")
 print(f"Species: {species}\n")
 
-# RMSE
 rmse_per_species = np.sqrt(np.mean((predictions - actuals) ** 2, axis=0))
 
 print("Per-species RMSE (ppb/step):")
@@ -35,7 +34,6 @@ plt.savefig(os.path.join(OUT_FOLDER, "1_rmse_by_species.png"), dpi=150)
 plt.close()
 print("\nSaved: 1_rmse_by_species.png")
 
-# prediction vs actual in scatter plots
 n_cols = 4
 n_rows = (len(species) + n_cols - 1) // n_cols
 fig, axes = plt.subplots(n_rows, n_cols, figsize=(14, 3.5 * n_rows))
@@ -61,14 +59,12 @@ plt.savefig(os.path.join(OUT_FOLDER, "2_scatter_all_species.png"), dpi=150, bbox
 plt.close()
 print("Saved: 2_scatter_all_species.png")
 
-# sample exps
 N_STEPS = 12
 n_experiments = predictions.shape[0] // N_STEPS
-exp_idx = 0  # first test experiment
+exp_idx = 0
 start   = exp_idx * N_STEPS
 end     = start + N_STEPS
 
-# top 3 highest rmse species
 top3_idx   = np.argsort(rmse_per_species)[::-1][:3]
 top3_names = [species[i] for i in top3_idx]
 
@@ -89,7 +85,6 @@ plt.savefig(os.path.join(OUT_FOLDER, "3_timeseries_top3.png"), dpi=150)
 plt.close()
 print("Saved: 3_timeseries_top3.png")
 
-# overall accuracy
 overall_rmse = np.sqrt(np.mean((predictions - actuals) ** 2))
 overall_r2   = []
 for i in range(len(species)):

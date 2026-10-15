@@ -54,8 +54,6 @@ def scale_and_split(X_clean, D_active):
     X_log   = np.log1p(X_clean)
     n_train = int(X_log.shape[0] * cfg.TRAIN_SPLIT)
 
-    # fit on train only: fitting before the split leaks test mean/std into the
-    # training inputs, which makes the reported test score optimistic
     scalerX = StandardScaler().fit(X_log[:n_train])
     scalerY = StandardScaler().fit(D_active[:n_train])
 
@@ -73,8 +71,6 @@ def scale_and_split(X_clean, D_active):
 
 
 def save_splits(X_train, Y_train, X_test, Y_test, species_names, species_weight, scalerY, scalerX):
-    # saved so baselines.py trains on the same data/weights — keep these keys
-    # and paths in sync with baselines.py's np.load(SPLITS_PATH) / scalerY load
     np.savez(
         cfg.SPLITS_PATH,
         X_train=X_train, Y_train=Y_train,
@@ -83,7 +79,6 @@ def save_splits(X_train, Y_train, X_test, Y_test, species_names, species_weight,
         species_weight=species_weight.cpu().numpy(),
     )
     joblib.dump(scalerY, cfg.SCALER_Y_PATH)
-    # scalerX is needed to map symbolic formulas back to ppb, so keep it too
     joblib.dump(scalerX, cfg.SCALER_X_PATH)
     print(f"Saved splits + scalers to {os.path.dirname(cfg.SPLITS_PATH)}")
 

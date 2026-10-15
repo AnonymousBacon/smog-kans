@@ -1,14 +1,3 @@
-# deliverables for 10/6: one unregularized model and one with OH penalized 60:1,
-# same architecture, same split, same step budget. run with
-#   --data data/baseline_10k/baseline_10k.npz
-# so the split comes from the prebuilt subsample rather than whichever experiments
-# happen to sit at the top of the csv.
-#
-# two changes from phase2.yaml:
-#  - transform log10_floor instead of log1p. log1p left OH untransformed (every OH
-#    value is below 1 ppb), skew 87 and max |z| 128 against < 6 for everything else
-#  - max_z dropped entirely. it existed to delete the OH outliers the old transform
-#    manufactured, and the new one leaves 3 experiments above 5 sigma instead of 128
 defaults:
   width_hidden: [16, 16, 16]
   grid: 3
@@ -21,7 +10,7 @@ defaults:
   prune_node_th: 1.0e-2
   prune_edge_th: 3.0e-2
   refine: [5, 10]
-  steps: 240          # 80 per stage. phase2 ran 120 and the val curve was still falling
+  steps: 240
   eval_every: 10
   n_exps: 10000
   dtype: float32
@@ -29,12 +18,8 @@ defaults:
   transform: log10_floor
 
 runs:
-  # unregularized, unweighted. the reference both deliverables are read against
   - name: A_unreg
 
-  # same model, OH weighted 60:1 against every other species. weights are normalized
-  # to mean 1 inside experiment.py, so the ratio is 60:1 but the loss stays on the
-  # same scale as A and lbfgs sees comparable step sizes
   - name: B_oh60
     species_weights:
       OH: 60

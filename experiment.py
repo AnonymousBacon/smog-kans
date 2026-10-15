@@ -8,6 +8,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 from kan import KAN
 from kan.LBFGS import LBFGS
@@ -15,12 +16,13 @@ from sklearn.preprocessing import StandardScaler
 
 import config as cfg
 import data
+import stoich
 
 DTYPES = {"float32": torch.float32, "float64": torch.float64}
+# species the 11-species runs left out, needed back for conservation.
+FIXED_SPECIES = ("HNO3", "CO", "H2", "H2O", "O2")
 N_STEPS_PER_EXP = 12
 
-# phase1.py flushes its own prints but this module's did not, so a redirected log
-# showed nothing until the buffer filled
 print = functools.partial(print, flush=True)
 
 
@@ -31,20 +33,30 @@ def load_raw(csv_path, n_exps):
     return X, D, species
 
 
-def load_npz(path):
-    # prebuilt dataset: a random subsample of the full csv with the experiment-level
-    # split already fixed. reading the csv instead takes whichever experiments happen
-    # to come first and re-derives the split from a seed, so two runs only match if
-    # they agree on n_exps and seed. raw arrays are stored untransformed on purpose --
-    # build_dataset applies the transform and fits the scalers on train rows itself
+def load_npz(path, all_species=False):
     d = np.load(path, allow_pickle=True)
     species = [str(s) for s in d["species"]]
     splits = (d["train_ids"], d["val_ids"], d["test_ids"])
     X, D = d["X_raw"], d["D_raw"]
+    if all_species:
+        X, D, species = load_all_species(path, d["source_exp_number"])
     n_exps = X.shape[0] // N_STEPS_PER_EXP
     print(f"loaded {os.path.basename(path)}: {n_exps} experiments, {X.shape[0]} rows")
     print(f"Species ({len(species)}): {species}")
     return X, D, species, splits, n_exps
+
+
+# rebuilds all 16 species from the sampled-experiments csv in the same order as the npz split.
+def load_all_species(npz_path, exp_numbers):
+    csv = os.path.join(os.path.dirname(npz_path), "baseline_10k_experiments.csv")
+    df = pd.read_csv(csv)
+    cols = [c for c in df.columns if c.endswith("[ppb]")]
+    C = df[cols].to_numpy().reshape(-1, N_STEPS_PER_EXP + 1, len(cols))
+    if not np.array_equal(df["Experiment number"].to_numpy()[::N_STEPS_PER_EXP + 1], exp_numbers):
+        raise ValueError(f"{csv} is not in the npz's experiment order")
+    X = C[:, :-1].reshape(-1, len(cols))
+    D = np.diff(C, axis=1).reshape(-1, len(cols))
+    return X, D, [c.split()[0] for c in cols]
 
 
 def split_experiments(n_exps, seed, frac=(0.7, 0.15, 0.15)):
@@ -67,16 +79,16 @@ def drop_outlier_exps(X_log, train_ids, val_ids, test_ids, max_z):
 
 
 def transform_inputs(X, train_rows, kind):
-    # log1p is only a log where x >> 1. every OH value is below 1 ppb, so log1p leaves
-    # OH essentially raw: skew 87 and max |z| 128 on the 10k set, against < 6 for every
-    # other species. that single species is what max_z was dropping experiments for.
-    # a per-species floor fixes it without breaking the species that sit near zero --
-    # a flat log10(x + 1e-12) moves the problem onto HCHO/H2O2/ALD2 instead
     if kind == "log1p":
         return np.log1p(X)
     if kind == "log10_floor":
-        floor = np.maximum(np.percentile(X[train_rows], 1, axis=0), 1e-9)
-        return np.log10(X + floor)
+        Xt = X[train_rows]
+        floor = np.percentile(Xt, 1, axis=0)
+        # species that start at exactly zero take their floor from their positive values instead.
+        for j in np.where(floor <= 1e-9)[0]:
+            pos = Xt[:, j][Xt[:, j] > 0]
+            floor[j] = np.percentile(pos, 1) if len(pos) else 1e-9
+        return np.log10(X + np.maximum(floor, 1e-9))
     raise ValueError(f"unknown transform {kind!r}")
 
 
@@ -90,6 +102,12 @@ def build_dataset(X, D, train_ids, val_ids, test_ids, device, dtype, max_z=0.0,
     tr, va, te = rows_for(train_ids), rows_for(val_ids), rows_for(test_ids)
     scaler_x = StandardScaler().fit(X_log[tr])
     scaler_y = StandardScaler().fit(D[tr])
+    # prints any input that lands past 6 sigma or is badly skewed, which is how OH's bad transform was found.
+    z = scaler_x.transform(X_log[tr])
+    skew = np.mean(z ** 3, axis=0)
+    if np.abs(z).max() > 6 or np.abs(skew).max() > 3:
+        print("  input check (max|z|, skew): "
+              + ", ".join(f"{j}:{np.abs(z[:, j]).max():.1f}/{skew[j]:.1f}" for j in range(z.shape[1])))
 
     def t(a):
         return torch.tensor(a, dtype=dtype, device=device)
@@ -104,16 +122,12 @@ def build_dataset(X, D, train_ids, val_ids, test_ids, device, dtype, max_z=0.0,
 def make_model(width, grid, k, seed, device, train_input, grid_eps=0.0):
     model = KAN(width=width, grid=grid, k=k, seed=seed, device=device,
                 auto_save=False, grid_eps=grid_eps, symbolic_enabled=False, save_act=False)
-    # one-time fit of the grid to the standardized inputs; default range is [-1, 1]
     model.update_grid(train_input)
     model.save_act = False
     return model
 
 
 def make_weights(species, weights, device, dtype):
-    # normalized to mean 1 so the weighted loss stays on the same scale as the plain
-    # one. without that, weighting OH 60:1 multiplies the objective by ~6 and changes
-    # the lbfgs step sizes, which would confound the weighting with the optimizer
     if not weights:
         return None
     w = torch.ones(len(species), device=device, dtype=dtype)
@@ -131,14 +145,17 @@ def mse(pred, target, w=None):
     return torch.mean(se)
 
 
+# applies the stoichiometric head when the run has one.
+def predict(model, x, head=None):
+    out = model(x)
+    return out if head is None else head(out)
+
+
 @torch.no_grad()
-def eval_mse(model, x, y, w=None):
-    # returns (weighted, unweighted). the weighted one is what training minimizes and
-    # what picks the checkpoint; the unweighted one is the only number comparable
-    # across runs with different weights
+def eval_mse(model, x, y, w=None, head=None):
     save_act = model.save_act
     model.save_act = False
-    pred = model(x)
+    pred = predict(model, x, head)
     out = (mse(pred, y, w).item(), mse(pred, y).item())
     model.save_act = save_act
     return out
@@ -155,8 +172,6 @@ def make_opt(model):
 
 
 def grid_coverage(model, x):
-    # fraction of each layer's inputs that land inside that layer's spline domain
-    # outside it only the base function contributes
     model.save_act = True
     with torch.no_grad():
         model(x)
@@ -171,7 +186,7 @@ def grid_coverage(model, x):
 
 
 def train_stage(model, ds, steps, lamb, eval_every, device, log, stage, grid_update=(0, 0),
-                w=None):
+                w=None, head=None, patience=0, min_delta=0.0):
     model.save_act = lamb > 0
     opt = make_opt(model)
     x, y = ds["train_input"], ds["train_label"]
@@ -180,7 +195,7 @@ def train_stage(model, ds, steps, lamb, eval_every, device, log, stage, grid_upd
 
     def closure():
         opt.zero_grad()
-        pred = model(x)
+        pred = predict(model, x, head)
         loss = mse(pred, y, w)
         if lamb > 0:
             reg = model.get_reg("edge_forward_spline_n", 1.0, 2.0, 0.0, 0.0)
@@ -193,14 +208,12 @@ def train_stage(model, ds, steps, lamb, eval_every, device, log, stage, grid_upd
         state["loss_uw"] = mse(pred.detach(), y).item()
         return objective
 
-    best_val, best_state = float("inf"), None
+    best_val, best_state, stale = float("inf"), None, 0
     for step in range(1, steps + 1):
         state["evals"] = 0
         sync(device)
         t0 = time.perf_counter()
         if gu_every and step % gu_every == 1 % gu_every and step <= gu_until:
-            # refit the grid to where the activations are now; the coefficients are
-            # refit too, so the old lbfgs curvature history no longer applies
             model.update_grid(x)
             opt = make_opt(model)
         opt.step(closure)
@@ -209,7 +222,9 @@ def train_stage(model, ds, steps, lamb, eval_every, device, log, stage, grid_upd
 
         val, val_uw = np.nan, np.nan
         if step % eval_every == 0 or step == steps:
-            val, val_uw = eval_mse(model, ds["val_input"], ds["val_label"], w)
+            val, val_uw = eval_mse(model, ds["val_input"], ds["val_label"], w, head)
+            # early stopping counts evals since the last real val improvement.
+            stale = 0 if val < best_val * (1 - min_delta) else stale + 1
             if val < best_val:
                 best_val, best_state = val, copy.deepcopy(model.state_dict())
             print(f"  [{stage}] step {step:4d}/{steps}  train_mse={state['loss']:.5f}  "
@@ -227,6 +242,11 @@ def train_stage(model, ds, steps, lamb, eval_every, device, log, stage, grid_upd
 
         if not np.isfinite(state["loss"]):
             print(f"  [{stage}] non-finite loss at step {step}, stopping stage")
+            break
+        if patience and stale >= patience:
+            print(f"  [{stage}] early stop at step {step}: no val improvement in "
+                  f"{patience} evals")
+            log["early_stops"].append((stage, step))
             break
 
     if best_state is not None:
@@ -248,9 +268,6 @@ def run(rc, X, D, species, splits, device, out_dir):
     torch.manual_seed(rc["seed"])
 
     train_ids, val_ids, test_ids = splits
-    # only subsets when the config asks for fewer experiments than the dataset holds,
-    # so the n_exps sweeps in phase1.yaml still work and a full-size run uses the split
-    # exactly as given
     n_train = int(0.7 * rc["n_exps"])
     if n_train < len(train_ids):
         train_ids = train_ids[:n_train]
@@ -266,24 +283,31 @@ def run(rc, X, D, species, splits, device, out_dir):
     if w is not None:
         print("  species weights (mean-normalized): "
               + ", ".join(f"{s}={v:.3f}" for s, v in zip(species, w.tolist())))
-    width = [n_sp] + list(rc["width_hidden"]) + [n_sp]
+    # with stoich on, the last kan layer outputs one flux per reaction instead of one tendency per species.
+    head, n_out = None, n_sp
+    if rc.get("stoich"):
+        S = stoich.stoich_matrix(species)
+        D_train = D[rows_for(train_ids)]
+        if not stoich.check_S(S, D_train, species):
+            raise ValueError("stoichiometric matrix does not match the data, see check above")
+        head = stoich.make_head(S, D_train, scaler_y, device, dtype)
+        n_out = S.shape[1]
+    width = [n_sp] + list(rc["width_hidden"]) + [n_out]
     model = make_model(width, rc["grid"], rc["k"], rc["seed"], device, ds["train_input"],
                        rc.get("grid_eps", 0.0))
     gu = (rc.get("grid_update_every", 0), rc.get("grid_update_until", 0))
-    # refine() already repositions the knots, so re-running update_grid inside a refine
-    # stage mostly just resets the lbfgs curvature history again. default stays True to
-    # reproduce the phase2/deliverable runs
     gu_refine = gu if rc.get("grid_update_refine", True) else (0, 0)
 
     n_stages = 1 + len(rc["refine"]) + (1 if rc["prune"] else 0)
     stage_steps = rc["steps"] // n_stages
     log = {k: [] for k in ("stage", "train_mse", "train_mse_uw", "reg", "val_mse",
-                           "val_mse_uw", "step_time", "closure_evals")}
+                           "val_mse_uw", "step_time", "closure_evals", "early_stops")}
     events = []
+    es = {"head": head, "patience": rc.get("patience", 0), "min_delta": rc.get("min_delta", 0.0)}
 
     t_start = time.perf_counter()
     model = train_stage(model, ds, stage_steps, rc["lamb"], rc["eval_every"], device, log,
-                        "train", gu, w)
+                        "train", gu, w, **es)
 
     if rc["prune"]:
         cache_acts(model, ds["train_input"])
@@ -293,24 +317,21 @@ def run(rc, X, D, species, splits, device, out_dir):
         events.append((len(log["stage"]), "prune"))
         print(f"  pruned width {before} -> {model.width}")
         model = train_stage(model, ds, stage_steps, 0.0, rc["eval_every"], device, log,
-                            "post_prune", (0, 0), w)
+                            "post_prune", (0, 0), w, **es)
 
-    # refine keeps the run's lamb rather than dropping to 0: switching the objective
-    # partway through is the thing "regularization: all or nothing" rules out, and it
-    # throws lbfgs off. post_prune above is the deliberate exception -- phase 2c
-    # retrains the pruned net unregularized on purpose
     for g in rc["refine"]:
         cache_acts(model, ds["train_input"])
         model = model.refine(g)
         model.auto_save = False
         events.append((len(log["stage"]), f"grid={g}"))
         model = train_stage(model, ds, stage_steps, rc["lamb"], rc["eval_every"], device,
-                            log, f"grid{g}", gu_refine, w)
+                            log, f"grid{g}", gu_refine, w, **es)
     total_time = time.perf_counter() - t_start
 
     with torch.no_grad():
         model.save_act = False
-        pred = model(ds["test_input"]).cpu().numpy()
+        pred = predict(model, ds["test_input"], head).cpu().numpy()
+        flux = None if head is None else head.flux_ppb(model(ds["test_input"])).cpu().numpy()
     pred_ppb = scaler_y.inverse_transform(pred)
     true_ppb = scaler_y.inverse_transform(ds["test_label"].cpu().numpy())
     rmse = np.sqrt(np.mean((pred_ppb - true_ppb) ** 2, axis=0))
@@ -343,7 +364,21 @@ def run(rc, X, D, species, splits, device, out_dir):
         "test_r2_oh": float(r2[species.index("OH")]) if "OH" in species else float("nan"),
         "dropped_exps": dropped,
         "grid_coverage": grid_coverage(model, ds["train_input"]),
+        "early_stops": [list(e) for e in log["early_stops"]],
     }
+    # r2 over the original 11 species keeps 16-species runs comparable with best_oh5.
+    active = [i for i, s in enumerate(species) if s not in FIXED_SPECIES]
+    metrics["test_r2_mean_11"] = float(np.mean(r2[active]))
+    if len(active) < len(species):
+        E = stoich.atoms(species)
+        turnover = np.abs(true_ppb) @ np.abs(E.T)
+        metrics["atom_residual_pred"] = dict(zip("CHNO", map(float, np.abs(pred_ppb @ E.T).max(axis=0)
+                                                             / turnover.mean(axis=0))))
+    if flux is not None:
+        metrics["flux_ppb"] = {f"R{j + 1}": {"mean": float(flux[:, j].mean()),
+                                             "std": float(flux[:, j].std()),
+                                             "frac_negative": float((flux[:, j] < 0).mean())}
+                               for j in range(flux.shape[1])}
 
     with open(os.path.join(out_dir, "config.json"), "w") as f:
         json.dump(rc, f, indent=2)
@@ -357,7 +392,8 @@ def run(rc, X, D, species, splits, device, out_dir):
     plot_loss(log, events, rc, os.path.join(out_dir, "loss_curves.png"))
     plot_scatter(pred_ppb, true_ppb, species, r2, rc["name"], os.path.join(out_dir, "scatter.png"))
     plot_rmse(rmse, r2, species, rc["name"], os.path.join(out_dir, "rmse_r2.png"))
-    plot_graph(model, ds["train_input"], species, os.path.join(out_dir, "kan_graph.png"))
+    out_vars = species if head is None else [f"R{j + 1}" for j in range(n_out)]
+    plot_graph(model, ds["train_input"], species, os.path.join(out_dir, "kan_graph.png"), out_vars)
 
     torch.set_default_dtype(torch.float32)
     return metrics, log
@@ -375,7 +411,6 @@ def plot_loss(log, events, rc, path):
     ax.semilogy(steps, log["train_mse"], label=f"train MSE{suffix}", lw=1)
     ax.semilogy(steps[has], val[has], "o-", ms=3, label=f"val MSE{suffix}", lw=1)
     if weighted:
-        # the unweighted curves are the ones comparable with the unweighted run
         val_uw = np.array(log["val_mse_uw"], dtype=float)
         ax.semilogy(steps, log["train_mse_uw"], ls="--", lw=1, color="tab:blue",
                     alpha=0.6, label="train MSE (unweighted)")
@@ -447,11 +482,11 @@ def plot_rmse(rmse, r2, species, title, path):
     plt.close(fig)
 
 
-def plot_graph(model, x, species, path):
+def plot_graph(model, x, species, path, out_vars=None):
     try:
         cache_acts(model, x[:2000])
         model.plot(folder=os.path.join(os.path.dirname(path), "kan_edges"),
-                   in_vars=species, out_vars=species, scale=1.0, varscale=0.3)
+                   in_vars=species, out_vars=out_vars or species, scale=1.0, varscale=0.3)
         plt.savefig(path, dpi=130, bbox_inches="tight")
         plt.close("all")
     except Exception as e:

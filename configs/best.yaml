@@ -1,12 +1,3 @@
-# the recipe the ablations picked, at full size. three changes from deliverable.yaml,
-# each one measured rather than guessed:
-#  - grid_update_refine: false   grid updates in the first stage only. runs/ablate_gu
-#    showed stage1-only beats updating in every stage (R2 0.9916 vs 0.9834, OH 0.9235
-#    vs 0.8543) and that removing them entirely is catastrophic (R2 0.034)
-#  - OH weight 5, not 60. runs/ablate_ohw found weight 5 gets essentially all the OH
-#    gain (0.8884 -> 0.9497) for almost nothing elsewhere (0.9975 -> 0.9959), while 20
-#    and 60 cost far more and buy less
-#  - 240 steps, to land before the 11am meeting. A_unreg_400 shows 400 is better still
 defaults:
   width_hidden: [16, 16, 16]
   grid: 3

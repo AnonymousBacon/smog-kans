@@ -1,0 +1,34 @@
+# U11 is best_oh5 run longer with early stopping, U16 adds the 5 fixed species, and S13 adds the JPM stoichiometric layer on top.
+defaults:
+  width_hidden: [16, 16, 16]
+  grid: 3
+  k: 3
+  grid_eps: 0.0
+  grid_update_every: 10
+  grid_update_until: 50
+  grid_update_refine: false
+  lamb: 0.0
+  prune: false
+  prune_node_th: 1.0e-2
+  prune_edge_th: 3.0e-2
+  refine: [5, 10]
+  steps: 400
+  eval_every: 10
+  patience: 5
+  min_delta: 1.0e-3
+  n_exps: 10000
+  dtype: float32
+  seed: 42
+  transform: log10_floor
+  species_weights:
+    OH: 5
+
+runs:
+  - name: U11_oh5_400
+
+  - name: U16_oh5
+    species: all16
+
+  - name: S13_oh5
+    species: all16
+    stoich: true

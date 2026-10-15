@@ -1,18 +1,3 @@
-"""is OH better predicted directly, or from a steady-state assumption?
-
-OH is the one species the KAN struggles with (test R2 0.899 unweighted). the fallback on
-the todo list was to predict it from a steady-state assumption instead. this decides
-that, without training a KAN -- everything here is seconds of sklearn.
-
-the steady-state idea: OH is a radical with a lifetime far shorter than the 5-minute
-step, so its concentration should be slaved to the slower species around it. if
-[OH] = f(other ten) holds, we can predict the other ten (which the KAN does at
-R2 >= 0.9955), map through f to get OH at t+1, and subtract to get the tendency.
-
-writes runs/oh_analysis.json.
-
-usage: python analyze_oh.py [path/to/baseline_10k.npz]
-"""
 import json
 import os
 import sys
@@ -34,9 +19,6 @@ def r2(pred, actual):
 
 
 def fit_hgb(xtr, ytr, xte):
-    # standardize the target. raw dOH is ~1e-3 ppb and the boosting model's split
-    # tolerances are absolute, so an unstandardized target quietly handicaps it and
-    # would make the KAN look better than it is
     mu, sd = ytr.mean(), ytr.std()
     m = HGB(max_iter=400, random_state=0).fit(xtr, (ytr - mu) / sd)
     return m, m.predict(xte) * sd + mu
@@ -54,26 +36,19 @@ def main():
     lx = np.log10(X + EPS)
     out = {}
 
-    # 1. does the steady-state relation hold at all? regress log[OH] on the other ten
-    #    at the SAME timestep, linear first then nonlinear
     lin = LinearRegression().fit(lx[R][:, others], lx[R][:, oh])
     out["ss_map_linear"] = r2(lin.predict(lx[E][:, others]), lx[E][:, oh])
     ss, ss_pred = fit_hgb(lx[R][:, others], lx[R][:, oh], lx[E][:, others])
     out["ss_map_nonlinear"] = r2(ss_pred, lx[E][:, oh])
 
-    # 2. the ceiling on the steady-state route: feed it the TRUE future concentrations
-    #    of the other ten, which no model would ever have. anything the real pipeline
-    #    achieves is below this
     lx_next = np.log10(X + D + EPS)
     mu, sd = lx[R][:, oh].mean(), lx[R][:, oh].std()
     oh_next = 10 ** (ss.predict(lx_next[E][:, others]) * sd + mu)
     out["ss_route_dOH_ceiling"] = r2(oh_next - X[E][:, oh], D[E][:, oh])
 
-    # 3. direct prediction, same inputs the KAN gets, as a non-KAN reference point
     _, direct = fit_hgb(lx[R], D[R][:, oh], lx[E])
     out["direct_dOH_gbm"] = r2(direct, D[E][:, oh])
 
-    # 4. how fast does OH actually move? a radical at steady state barely drifts per step
     out["median_abs_dOH_over_median_OH"] = float(
         np.median(np.abs(D[:, oh])) / np.median(X[:, oh]))
 

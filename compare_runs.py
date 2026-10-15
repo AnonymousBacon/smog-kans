@@ -1,12 +1,3 @@
-"""side-by-side comparison of finished runs, for the write-up.
-
-per-run loss curves and 1:1 grids are written by experiment.py already. this adds the
-cross-run view: val curves on one axis and per-species r2 as grouped bars, plus a
-markdown table. everything is the unweighted val mse -- a weighted run's own val_mse is
-on its own scale and is not comparable with an unweighted run's.
-
-usage: python compare_runs.py runs/deliverable/cpu/A_unreg runs/deliverable/cpu/B_oh60
-"""
 import json
 import os
 import sys
@@ -25,7 +16,6 @@ def load(run_dir):
 
 
 def curve_key(h):
-    # runs from before the weighted-loss change only have val_mse
     return "val_mse_uw" if "val_mse_uw" in h.files else "val_mse"
 
 

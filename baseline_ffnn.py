@@ -32,7 +32,6 @@ assert all(df.columns[2:].str.endswith("[ppb]")), (
     "Unexpected non-ppb columns after index 2, csv"
 )
 
-# load, clean
 ignore        = []
 active_cols   = [c for c in df.columns if c.split(" ")[0] not in ignore and c.endswith("[ppb]")]
 species_names = [c.split(" ")[0] for c in active_cols]
@@ -57,7 +56,6 @@ n_species = len(species_names)
 print(f"Species ({n_species}): {species_names}")
 print(f"X: {X_clean.shape}  |  D: {D_active.shape}")
 
-# scale
 scalerX  = StandardScaler()
 scalerY  = StandardScaler()
 X_scaled = scalerX.fit_transform(np.log1p(X_clean))
@@ -74,7 +72,6 @@ def t(arr):
 X_train_t, Y_train_t = t(X_train), t(Y_train)
 X_test_t,  Y_test_t  = t(X_test),  t(Y_test)
 
-# same architecture as KAN
 class FFNN(nn.Module):
     def __init__(self, n_species, hidden=16):
         super().__init__()
@@ -125,7 +122,6 @@ plt.savefig(FIG_DIR + "ffnn_loss_curves.png", dpi=150, bbox_inches="tight")
 plt.close()
 print("Saved: figures/ffnn_loss_curves.png")
 
-# evaluate
 model.eval()
 with torch.no_grad():
     preds_scaled = model(X_test_t)
@@ -138,7 +134,6 @@ print(f"\nTest MSE: {mse:.6f} | Mean RMSE: {rmse_per.mean():.4f} ppb/step")
 for name, rmse in zip(species_names, rmse_per):
     print(f"  {name:10s}: {rmse:.4f} ppb/step")
 
-# rmse bar chart
 x, w = np.arange(n_species), 0.4
 fig, ax = plt.subplots(figsize=(13, 5))
 ax.bar(x, rmse_per, w)
@@ -151,7 +146,6 @@ plt.savefig(FIG_DIR + "ffnn_rmse.png", dpi=150, bbox_inches="tight")
 plt.close()
 print("Saved: figures/ffnn_rmse.png")
 
-# ols scatter: predicted vs actual per species
 n_cols = 4
 n_rows = -(-n_species // n_cols)
 fig, axes = plt.subplots(n_rows, n_cols, figsize=(14, n_rows * 3))
@@ -167,7 +161,6 @@ for i, (name, ax) in enumerate(zip(species_names, axes)):
     x_fit = np.linspace(lims[0], lims[1], 200)
     ax.plot(x_fit, m * x_fit + b, 'b-', linewidth=0.9, label=f'OLS (m={m:.2f})')
 
-    # predictive r2 against the 1:1 line; see the note in visualize.py
     ss_res = np.sum((a - p) ** 2)
     ss_tot = np.sum((a - a.mean()) ** 2)
     r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float('nan')

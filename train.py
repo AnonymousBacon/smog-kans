@@ -33,19 +33,12 @@ def loss_key(results):
     return 'test_loss' if 'test_loss' in results else 'val_loss'
 
 
-# everything pykan's forward() overwrites on the model, regardless of save_act
 _FWD_STATE = ("cache_data", "acts", "acts_premult", "spline_preacts",
               "spline_postsplines", "spline_postacts", "acts_scale",
               "acts_scale_spline", "subnode_actscale", "edge_actscale")
 
 
 def weighted_test_loss(model, dataset, loss_fn):
-    # same scale as the values pykan records in its history: it stores the sqrt
-    # of whatever loss_fn it was handed.
-    # this has to be a pure observation. forward() resets cache_data and the
-    # activation-scale lists that prune() scores edges from, so measuring next to
-    # prune() would otherwise change which edges get cut -- and prune() re-runs
-    # forward(self.cache_data), which dies outright on a test-sized cache
     saved = {k: getattr(model, k) for k in _FWD_STATE if hasattr(model, k)}
     prev_save_act = model.save_act
     model.save_act = False
@@ -61,10 +54,6 @@ def weighted_test_loss(model, dataset, loss_fn):
 
 def fit_chunked(model, dataset, opt, total_steps, chunk_size, best_val, stage,
                 print_every=cfg.PRINT_EVERY, **kwargs):
-    # pykan defaults to update_grid=True, which rebuilds each layer's grid from
-    # sample quantiles every grid_update_freq(5) steps. that jitters the loss every
-    # 5 steps and goes NaN outright once the grid is refined past 5 intervals, so
-    # the grid stays fixed here and is only changed deliberately by refine()
     kwargs.setdefault("update_grid", False)
     train_hist, test_hist = [], []
     steps_done = 0
@@ -77,10 +66,6 @@ def fit_chunked(model, dataset, opt, total_steps, chunk_size, best_val, stage,
         val = res[tk][-1]
         if val < best_val:
             best_val = val
-            # one checkpoint per stage. pruning and refining resize coef, so a
-            # single shared best-checkpoint gets overwritten by the first chunk
-            # of the next stage no matter how much worse that stage is -- which
-            # is how a warmup model 15x better than the final one was lost
             model.saveckpt(f"{cfg.BEST_CKPT_PATH}_{stage}")
             print(f"  best val loss: {val:.6f} → saved ({stage})")
         steps_done += s
@@ -98,9 +83,8 @@ def run_training_pipeline(dataset, kan_width, weighted_mse):
     model    = make_model(kan_width, cfg.SEED, cfg.device)
     best_val = float('inf')
     train_loss, test_loss = [], []
-    stage_bests = []   # (stage name, best test loss) so the summary can show the damage
+    stage_bests = []
 
-    # warmup: fast training in speed mode, no sparsification yet
     print(f"\nWarmup: {cfg.WARMUP_STEPS} steps (speed mode)")
     stage_train, stage_test, best_val = fit_chunked(
         model, dataset, "LBFGS", cfg.WARMUP_STEPS, cfg.LBFGS_CHUNK,
@@ -110,10 +94,6 @@ def run_training_pipeline(dataset, kan_width, weighted_mse):
     test_loss  += stage_test
     stage_bests.append(("warmup", best_val))
 
-    # sparsify: leave speed mode so activations get cached for the l1/entropy
-    # penalty. also re-enable the symbolic branch here for good, since speed()
-    # turns it off permanently — if left off, auto_symbolic's snapped edges
-    # would silently contribute nothing to the forward pass later on
     model.save_act         = True
     model.symbolic_enabled = True
     print(f"\nSparsifying: {cfg.SPARSIFY_STEPS} steps (lamb={cfg.SPARSIFY_LAMB})")
@@ -125,7 +105,6 @@ def run_training_pipeline(dataset, kan_width, weighted_mse):
     test_loss  += stage_test
     stage_bests.append(("sparsify", best_val))
 
-    # prune dead nodes/edges, then drop activation caching again for speed
     print(f"\nPruning (node_th={cfg.PRUNE_NODE_TH}, edge_th={cfg.PRUNE_EDGE_TH})")
     print(f"  width before: {model.width}")
     loss_pre_prune = weighted_test_loss(model, dataset, weighted_mse)
@@ -134,9 +113,6 @@ def run_training_pipeline(dataset, kan_width, weighted_mse):
     model.save_act  = False
     model.auto_save = False
 
-    # pruning is the step most likely to wreck the model, and the damage is
-    # invisible in the loss history because refinement partly walks it back.
-    # report it directly: the thresholds are only safe if this ratio stays small
     loss_post_prune = weighted_test_loss(model, dataset, weighted_mse)
     ratio = loss_post_prune / loss_pre_prune if loss_pre_prune > 0 else float('inf')
     print(f"  test loss {loss_pre_prune:.6f} -> {loss_post_prune:.6f}  ({ratio:.1f}x)")
@@ -144,19 +120,14 @@ def run_training_pipeline(dataset, kan_width, weighted_mse):
         print(f"  WARNING: pruning made the model {ratio:.1f}x worse. it cut load-bearing")
         print(f"  edges, not dead ones. loosen PRUNE_EDGE_TH/PRUNE_NODE_TH or sparsify longer.")
 
-    # prune changed the parameter shapes, so a best checkpoint from before it can
-    # no longer be loaded into this model. each stage now writes its own
-    # checkpoint, so resetting here no longer discards the earlier stage's best
     best_val = float('inf')
 
-    # grid refinement: train the pruned network at increasing spline
-    # resolution, retraining after each refine step
     for grid in cfg.REFINE_GRIDS:
         model.save_act = True
         model(dataset['train_input'])
         model = model.refine(grid)
-        model.save_act = False   # refine() resets save_act to its default (True)
-        best_val = float('inf')  # grid change resizes coef, same reason as after prune
+        model.save_act = False
+        best_val = float('inf')
 
         print(f"\nGrid refine: grid={grid} ({cfg.REFINE_STEPS} steps)")
         stage_train, stage_test, best_val = fit_chunked(
@@ -171,9 +142,6 @@ def run_training_pipeline(dataset, kan_width, weighted_mse):
     print(f"Checkpoint saved → {cfg.CKPT_PATH}_*")
     print("To skip retraining next run: set LOAD_FROM_CHECKPOINT = True")
 
-    # the pipeline ships whatever the last stage produced, which is not
-    # necessarily the best model it built. say so plainly rather than leaving it
-    # to be discovered from the loss curves
     best_stage, best_loss = min(stage_bests, key=lambda sb: sb[1])
     print("\nBest test loss per stage:")
     for name, val in stage_bests:

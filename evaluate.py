@@ -19,9 +19,6 @@ def eval_model(model, dataset, scalerY):
 
 
 def run_symbolic_fitting(model, dataset, scalerY, species_names, mse, rmse_per, weighted_mse):
-    # symbolic fitting: snap well-fit edges to closed-form functions for
-    # interpretability, then briefly retune their affine constants.
-    # edges killed by pruning get snapped to the constant '0' automatically.
     if np.isnan(mse):
         print("\nSkipping auto_symbolic: model is already producing NaN, retrain first")
         preds, actual_ppb = eval_model(model, dataset, scalerY)[2:]
@@ -32,14 +29,6 @@ def run_symbolic_fitting(model, dataset, scalerY, species_names, mse, rmse_per, 
     model.save_act         = True
     model.symbolic_enabled = True
 
-    # auto_symbolic fits each edge from the activations this forward pass caches.
-    # for every candidate function it sweeps the affine constants over a 101x101
-    # grid evaluated at every cached row, so pykan holds an
-    # n_rows x 101 x 101 tensor at once -- 3.65 gib at the full 96k rows, and it
-    # rebuilds that three times per edge, so the sweep ooms before the first edge
-    # is fitted. the sweep only has to pin down a and b for a 1d curve, which a
-    # few thousand rows already do to far more precision than the r2 threshold
-    # resolves, so feed it a fixed subsample.
     fit_input = dataset['train_input']
     if fit_input.shape[0] > cfg.SYMBOLIC_FIT_SAMPLES:
         gen = torch.Generator().manual_seed(cfg.SEED)
@@ -48,8 +37,6 @@ def run_symbolic_fitting(model, dataset, scalerY, species_names, mse, rmse_per, 
     with torch.no_grad():
         model(fit_input)
 
-    # tee auto_symbolic's per-edge decisions: they stream to the console as usual
-    # and are also kept so the snapping figure can be built from them
     _sym_log     = io.StringIO()
     _real_stdout = sys.stdout
 

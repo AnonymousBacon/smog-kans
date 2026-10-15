@@ -1,5 +1,3 @@
-"""visualization for auto_symbolic snapping: which edges became closed-form
-functions, which stayed splines, and how good the fits were."""
 import re
 import numpy as np
 import matplotlib
@@ -8,7 +6,6 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 from collections import Counter
 
-# palette roles
 C_SNAP    = "#2a78d6"
 C_SPLINE  = "#eb6834"
 C_PRUNED  = "#e1e0d9"
@@ -29,7 +26,6 @@ _RE_OMIT = re.compile(r"For \((\d+),(\d+),(\d+)\) the best fit was (\S+?), but r
 
 
 def parse_symbolic_log(log_text):
-    """turn auto_symbolic's stdout into per-edge records"""
     edges = []
     for line in log_text.splitlines():
         line = line.strip()
@@ -62,7 +58,6 @@ def _style_axis(ax, grid_axis=None):
 
 
 def _panel_coverage(ax, edges, n_layers):
-    """stacked bar per layer: how many edges ended in each state"""
     counts = {s: [0] * n_layers for s in STATUS_ORDER}
     for e in edges:
         if e["l"] < n_layers:
@@ -90,7 +85,6 @@ def _panel_coverage(ax, edges, n_layers):
 
 
 def _panel_vocabulary(ax, edges, top_n=8):
-    """which closed-form functions the search actually chose"""
     funs = Counter(e["fun"] for e in edges if e["status"] == "snapped" and e["fun"] not in (None, "0"))
     if not funs:
         ax.text(0.5, 0.5, "no edges snapped", ha="center", va="center",
@@ -117,7 +111,6 @@ def _panel_vocabulary(ax, edges, top_n=8):
 
 
 def _panel_r2(ax, edges, r2_threshold):
-    """distribution of best-fit quality, split at the accept threshold"""
     snap = [e["r2"] for e in edges if e["status"] == "snapped" and e["r2"] is not None]
     omit = [e["r2"] for e in edges if e["status"] == "spline" and e["r2"] is not None]
     if not snap and not omit:
@@ -131,7 +124,6 @@ def _panel_r2(ax, edges, r2_threshold):
     ax.hist([omit, snap], bins=bins, stacked=True,
             color=[C_SPLINE, C_SNAP], edgecolor=SURFACE, linewidth=0.4, zorder=3)
     ax.axvline(r2_threshold, color=INK_2, linestyle="--", linewidth=1.4, zorder=4)
-    # label sits left of the line, clear of the peak that always abuts it on the right
     ax.text(r2_threshold - (bins[-1] - bins[0]) * 0.012, ax.get_ylim()[1] * 0.97,
             f"threshold {r2_threshold:g} ", fontsize=8, color=INK_2, va="top", ha="right",
             zorder=5, bbox=dict(facecolor=SURFACE, edgecolor="none", pad=1.5))
@@ -146,7 +138,6 @@ def _panel_r2(ax, edges, r2_threshold):
 
 
 def _panel_edge_maps(fig, gs_row, edges, width, species):
-    """per-layer grid of every edge, colored by outcome"""
     n_layers = len(width) - 1
     sub = gs_row.subgridspec(1, n_layers, wspace=0.32)
     code = {"pruned": 0, "snapped": 1, "spline": 2}
@@ -165,7 +156,6 @@ def _panel_edge_maps(fig, gs_row, edges, width, species):
         ax.grid(which="minor", color=SURFACE, linewidth=1.4)
         ax.tick_params(which="minor", length=0)
 
-        # name the real species on the network's two open ends
         if l == 0 and species is not None and len(species) == width[0]:
             ax.set_yticks(range(width[0]))
             ax.set_yticklabels(species, fontsize=6.5, color=INK_2)
@@ -188,7 +178,6 @@ def _panel_edge_maps(fig, gs_row, edges, width, species):
 
 def plot_symbolic_snapping(edges, width, species=None, r2_threshold=0.9,
                            out_path="figures/symbolic_snapping.png"):
-    """render the full snapping report"""
     n_layers = len(width) - 1
     total   = len(edges)
     n_snap  = sum(1 for e in edges if e["status"] == "snapped")
@@ -207,7 +196,6 @@ def plot_symbolic_snapping(edges, width, species=None, r2_threshold=0.9,
              f"at R² ≥ {r2_threshold:g}   ·   {n_prune} pruned   ·   {total} edges total",
              fontsize=10.5, color=INK_2)
 
-    # one figure-level legend: the same encoding drives both the bars and the edge maps
     fig.legend(handles=[Patch(facecolor=STATUS_COLOR[s], edgecolor=BASELINE, linewidth=0.5,
                               label=STATUS_LABEL[s]) for s in STATUS_ORDER],
                fontsize=8.5, frameon=False, loc="upper left", bbox_to_anchor=(0.072, 0.912),

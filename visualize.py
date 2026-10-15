@@ -44,8 +44,6 @@ def plot_loss_curves():
         train_loss = list(_h["train_loss"])
         test_loss  = list(_h["test_loss"])
 
-        # pykan stores sqrt() of the loss it was given, and it was given
-        # weighted_mse, so these series are weighted RMSE and not MSE
         fig, ax = plt.subplots(figsize=(10, 5))
         fig.suptitle("Train vs Test Loss (weighted RMSE, log scale)", fontsize=13)
         ax.semilogy(train_loss, label='train')
@@ -69,8 +67,6 @@ def plot_scatter(preds, actual_ppb, species_names, n_species):
     for i, (name, ax) in enumerate(zip(species_names, axes)):
         a, p = actual_ppb[:, i], preds[:, i]
 
-        # np.polyfit raises LinAlgError on non-finite input, which would take out
-        # the whole figure just because one species went bad
         finite = np.isfinite(a) & np.isfinite(p)
         a, p = a[finite], p[finite]
         if a.size < 2:
@@ -80,21 +76,13 @@ def plot_scatter(preds, actual_ppb, species_names, n_species):
 
         ax.scatter(a, p, s=1, alpha=0.3)
 
-        # 1:1 reference line
         lims = [min(a.min(), p.min()), max(a.max(), p.max())]
         ax.plot(lims, lims, 'r--', linewidth=0.8, label='1:1')
 
-        # ols fit
         m, b = np.polyfit(a, p, 1)
         x_fit = np.linspace(lims[0], lims[1], 200)
         ax.plot(x_fit, m * x_fit + b, 'b-', linewidth=0.9, label=f'OLS (m={m:.2f})')
 
-        # predictive r2: residuals against the 1:1 line, over the variance of the
-        # actuals. measuring against the fitted ols line and dividing by the
-        # variance of the predictions instead scores how straight the cloud is,
-        # not how accurate it is -- a constant prediction lies exactly on its own
-        # flat ols line, so OH and ALD2 both reported r2 = 1.000 while predicting
-        # a single number and explaining none of the variance
         ss_res = np.sum((a - p) ** 2)
         ss_tot = np.sum((a - a.mean()) ** 2)
         r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float('nan')
@@ -114,19 +102,14 @@ def plot_scatter(preds, actual_ppb, species_names, n_species):
 def plot_kan_graph(model, dataset, species_names, n_species):
     model.save_act = True
     with torch.no_grad():
-        # seeded so the same run always composites the graph from the same sample
         gen = torch.Generator(device='cpu').manual_seed(cfg.SEED)
         plot_idx = torch.randperm(dataset['train_input'].shape[0], generator=gen)[:8192]
         out = model(dataset['train_input'][plot_idx])
 
-    # plot() turns activations into alpha values, so a non-finite model dies deep
-    # inside matplotlib with an opaque "alpha is outside 0-1 range" error
     if not torch.isfinite(out).all():
         print("Skipped KAN graph: model produces non-finite activations, retrain first")
         return
 
-    # pykan's label font size (40*scale*varscale) and label spacing (fig_width/n_species)
-    # both scale with `scale`, so only varscale (not scale) can prevent label overlap
     max_label_len = max(len(s) for s in species_names)
     label_varscale = min(1.0, max(0.25, 19 / (n_species * max_label_len)))
     try:

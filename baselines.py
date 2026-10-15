@@ -19,11 +19,9 @@ KAN_PREDS  = os.path.join(BASE_DIR, "predictions.npz")
 SEED       = 42
 os.makedirs(FIG_DIR, exist_ok=True)
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   # mps skipped: incomplete op coverage for pykan/lbfgs
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"device: {device}" + (f" ({torch.cuda.get_device_name(0)})" if device.type == "cuda" else ""))
 
-# load preprocessed splits saved by model.py
-# these are already log1p + StandardScaler transformed — same as what KAN trained on
 d          = np.load(SPLITS, allow_pickle=True)
 X_train    = d['X_train']
 Y_train    = d['Y_train']
@@ -34,13 +32,11 @@ scalerY    = joblib.load(SCALER_Y)
 n_species  = len(species)
 print(f"train: {X_train.shape} | test: {X_test.shape}")
 
-# load KAN predictions for comparison
 _kan       = np.load(KAN_PREDS, allow_pickle=True)
-kan_preds  = _kan['predictions']   # already in ppb
-kan_actual = _kan['actuals']       # already in ppb
+kan_preds  = _kan['predictions']
+kan_actual = _kan['actuals']
 
 
-# xgboost
 print("\ntraining xgboost...")
 t0 = time.time()
 xgb = MultiOutputRegressor(
@@ -55,10 +51,9 @@ print(f"xgboost training time: {xgb_time:.1f}s")
 
 xgb_preds_scaled = xgb.predict(X_test)
 xgb_preds  = scalerY.inverse_transform(xgb_preds_scaled)
-actual_ppb = scalerY.inverse_transform(Y_test)   # ground truth in ppb
+actual_ppb = scalerY.inverse_transform(Y_test)
 
 
-# ffnn
 class FFNN(nn.Module):
     def __init__(self, n_in, n_out, hidden=64):
         super().__init__()
@@ -71,7 +66,6 @@ class FFNN(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-# weighted loss - reuses the exact per-species weights model.py trained with
 _weights = torch.tensor(d['species_weight'], dtype=torch.float32, device=device)
 
 def weighted_mse(pred, target):
@@ -109,7 +103,6 @@ with torch.no_grad():
 ffnn_preds = scalerY.inverse_transform(ffnn_preds_scaled)
 
 
-# rmse comparison
 def rmse_per_species(preds, actual):
     return np.sqrt(np.mean((preds - actual) ** 2, axis=0))
 
@@ -124,7 +117,6 @@ for i, name in enumerate(species):
     print(f"  {name:10s}  {kan_rmse[i]:8.4f}  {xgb_rmse[i]:8.4f}  {ffnn_rmse[i]:8.4f}")
 print(f"\n  {'mean':10s}  {kan_rmse.mean():8.4f}  {xgb_rmse.mean():8.4f}  {ffnn_rmse.mean():8.4f}")
 
-# grouped bar chart
 x  = np.arange(n_species)
 w  = 0.26
 fig, ax = plt.subplots(figsize=(14, 5))
@@ -142,7 +134,6 @@ plt.close()
 print("\nSaved: figures/comparison_rmse.png")
 
 
-# ols scatter per model
 def plot_scatter(preds, actual, names, title, filename):
     n_cols = 4
     n_rows = -(-len(names) // n_cols)
@@ -157,7 +148,6 @@ def plot_scatter(preds, actual, names, title, filename):
         m, b = np.polyfit(a, p, 1)
         x_fit = np.linspace(lims[0], lims[1], 200)
         ax.plot(x_fit, m * x_fit + b, 'b-', linewidth=0.9, label=f'OLS (m={m:.2f})')
-        # predictive r2 against the 1:1 line; see the note in visualize.py
         ss_res = np.sum((a - p) ** 2)
         ss_tot = np.sum((a - a.mean()) ** 2)
         r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float('nan')

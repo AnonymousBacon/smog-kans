@@ -28,7 +28,6 @@ for i, (name, ax) in enumerate(zip(species_names, axes)):
     x_fit = np.linspace(lims[0], lims[1], 200)
     ax.plot(x_fit, m * x_fit + b, 'b-', linewidth=0.9, label=f'OLS (m={m:.2f})')
 
-    # predictive r2 against the 1:1 line; see the note in visualize.py
     ss_res = np.sum((a - p) ** 2)
     ss_tot = np.sum((a - a.mean()) ** 2)
     r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float('nan')

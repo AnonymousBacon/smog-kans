@@ -1,13 +1,3 @@
-# where is the knee in the OH weight?
-#
-# at full size, weight 1 gives OH R2 0.899 with every other species >= 0.9955, and
-# weight 60 gives OH 0.948 but drops H2O2 to 0.674 and ALD2 to 0.743. so the weighting
-# does buy real OH accuracy -- it is just priced far too high at 60:1. this sweeps the
-# bracket at 3k experiments to find a weight that keeps most of the OH gain without
-# collapsing the rest, cheaply enough to run while the full-size runs are going.
-#
-# weight 1 is included so the ladder has its own 3k baseline; the full-size numbers are
-# not comparable across a change in dataset size.
 defaults:
   width_hidden: [16, 16, 16]
   grid: 3
