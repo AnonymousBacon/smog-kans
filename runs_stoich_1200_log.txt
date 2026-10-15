@@ -1,0 +1,135 @@
+device: cuda (NVIDIA RTX A5000)
+patched pykan curve2coef (rank-safe ridge solve; cuda gels workaround)
+loaded baseline_10k.npz: 10000 experiments, 120000 rows
+Species (11): ['O3', 'NO', 'NO2', 'HCHO', 'HO2', 'H2O2', 'OH', 'ALD2', 'MGLY', 'MCO3', 'PAN']
+experiments: 10000  train/val/test: [7000, 1500, 1500]  device: cuda  threads: 16
+
+=== S13_oh5 ===
+{"width_hidden": [16, 16, 16], "grid": 3, "k": 3, "grid_eps": 0.0, "grid_update_every": 10, "grid_update_until": 50, "grid_update_refine": false, "lamb": 0.0, "prune": false, "prune_node_th": 0.01, "prune_edge_th": 0.03, "refine": [5, 10], "steps": 1200, "eval_every": 10, "patience": 5, "min_delta": 0.001, "n_exps": 10000, "dtype": "float32", "seed": 42, "transform": "log10_floor", "species_weights": {"OH": 5}, "name": "S13_oh5", "species": "all16", "stoich": true}
+loaded baseline_10k.npz: 10000 experiments, 120000 rows
+Species (16): ['O3', 'NO', 'NO2', 'HCHO', 'HO2', 'H2O2', 'OH', 'HNO3', 'CO', 'H2', 'ALD2', 'MGLY', 'MCO3', 'PAN', 'H2O', 'O2']
+  species weights (mean-normalized): O3=0.800, NO=0.800, NO2=0.800, HCHO=0.800, HO2=0.800, H2O2=0.800, OH=4.000, HNO3=0.800, CO=0.800, H2=0.800, ALD2=0.800, MGLY=0.800, MCO3=0.800, PAN=0.800, H2O=0.800, O2=0.800
+stoich check: 13 reactions, rank(S)=11, rank(data)=10, relative residual of data outside span(S)=3.46e-12  ->  ok
+  [train] step   10/400  train_mse=0.79187  reg=0.000e+00  val_mse=0.59893  val_mse_uw=0.73959  2.007s/step
+  [train] step   20/400  train_mse=0.64883  reg=0.000e+00  val_mse=0.57734  val_mse_uw=0.71055  1.940s/step
+  [train] step   30/400  train_mse=0.55638  reg=0.000e+00  val_mse=0.54743  val_mse_uw=0.67582  2.145s/step
+  [train] step   40/400  train_mse=0.51924  reg=0.000e+00  val_mse=0.52638  val_mse_uw=0.65350  2.167s/step
+  [train] step   50/400  train_mse=0.49922  reg=0.000e+00  val_mse=0.50870  val_mse_uw=0.63209  2.175s/step
+  [train] step   60/400  train_mse=0.44797  reg=0.000e+00  val_mse=0.45642  val_mse_uw=0.56395  2.078s/step
+  [train] step   70/400  train_mse=0.41779  reg=0.000e+00  val_mse=0.42616  val_mse_uw=0.52657  2.267s/step
+  [train] step   80/400  train_mse=0.38940  reg=0.000e+00  val_mse=0.39717  val_mse_uw=0.49080  1.991s/step
+  [train] step   90/400  train_mse=0.35062  reg=0.000e+00  val_mse=0.35698  val_mse_uw=0.43902  2.180s/step
+  [train] step  100/400  train_mse=0.30637  reg=0.000e+00  val_mse=0.31133  val_mse_uw=0.38308  2.183s/step
+  [train] step  110/400  train_mse=0.27128  reg=0.000e+00  val_mse=0.27587  val_mse_uw=0.33563  2.086s/step
+  [train] step  120/400  train_mse=0.22428  reg=0.000e+00  val_mse=0.22643  val_mse_uw=0.27263  2.089s/step
+  [train] step  130/400  train_mse=0.16626  reg=0.000e+00  val_mse=0.16560  val_mse_uw=0.19754  2.003s/step
+  [train] step  140/400  train_mse=0.13831  reg=0.000e+00  val_mse=0.13751  val_mse_uw=0.16576  2.290s/step
+  [train] step  150/400  train_mse=0.12918  reg=0.000e+00  val_mse=0.12856  val_mse_uw=0.15617  2.280s/step
+  [train] step  160/400  train_mse=0.12496  reg=0.000e+00  val_mse=0.12404  val_mse_uw=0.15126  2.186s/step
+  [train] step  170/400  train_mse=0.11865  reg=0.000e+00  val_mse=0.11744  val_mse_uw=0.14312  1.995s/step
+  [train] step  180/400  train_mse=0.11394  reg=0.000e+00  val_mse=0.11248  val_mse_uw=0.13764  2.284s/step
+  [train] step  190/400  train_mse=0.11151  reg=0.000e+00  val_mse=0.11009  val_mse_uw=0.13483  2.373s/step
+  [train] step  200/400  train_mse=0.10770  reg=0.000e+00  val_mse=0.10576  val_mse_uw=0.12929  2.203s/step
+  [train] step  210/400  train_mse=0.10133  reg=0.000e+00  val_mse=0.09911  val_mse_uw=0.12068  2.386s/step
+  [train] step  220/400  train_mse=0.09575  reg=0.000e+00  val_mse=0.09317  val_mse_uw=0.11293  2.094s/step
+  [train] step  230/400  train_mse=0.09172  reg=0.000e+00  val_mse=0.08842  val_mse_uw=0.10734  2.190s/step
+  [train] step  240/400  train_mse=0.08928  reg=0.000e+00  val_mse=0.08610  val_mse_uw=0.10501  2.290s/step
+  [train] step  250/400  train_mse=0.08755  reg=0.000e+00  val_mse=0.08430  val_mse_uw=0.10285  2.093s/step
+  [train] step  260/400  train_mse=0.08552  reg=0.000e+00  val_mse=0.08225  val_mse_uw=0.10019  2.004s/step
+  [train] step  270/400  train_mse=0.08373  reg=0.000e+00  val_mse=0.08038  val_mse_uw=0.09795  2.099s/step
+  [train] step  280/400  train_mse=0.08191  reg=0.000e+00  val_mse=0.07850  val_mse_uw=0.09548  2.301s/step
+  [train] step  290/400  train_mse=0.07992  reg=0.000e+00  val_mse=0.07641  val_mse_uw=0.09281  2.299s/step
+  [train] step  300/400  train_mse=0.07793  reg=0.000e+00  val_mse=0.07450  val_mse_uw=0.09056  2.198s/step
+  [train] step  310/400  train_mse=0.07620  reg=0.000e+00  val_mse=0.07264  val_mse_uw=0.08829  2.193s/step
+  [train] step  320/400  train_mse=0.07468  reg=0.000e+00  val_mse=0.07114  val_mse_uw=0.08656  2.281s/step
+  [train] step  330/400  train_mse=0.07301  reg=0.000e+00  val_mse=0.06940  val_mse_uw=0.08420  2.190s/step
+  [train] step  340/400  train_mse=0.07156  reg=0.000e+00  val_mse=0.06802  val_mse_uw=0.08267  2.304s/step
+  [train] step  350/400  train_mse=0.07067  reg=0.000e+00  val_mse=0.06713  val_mse_uw=0.08167  2.102s/step
+  [train] step  360/400  train_mse=0.06965  reg=0.000e+00  val_mse=0.06613  val_mse_uw=0.08048  2.289s/step
+  [train] step  370/400  train_mse=0.06857  reg=0.000e+00  val_mse=0.06511  val_mse_uw=0.07928  2.302s/step
+  [train] step  380/400  train_mse=0.06751  reg=0.000e+00  val_mse=0.06403  val_mse_uw=0.07798  2.281s/step
+  [train] step  390/400  train_mse=0.06615  reg=0.000e+00  val_mse=0.06274  val_mse_uw=0.07611  2.295s/step
+  [train] step  400/400  train_mse=0.06484  reg=0.000e+00  val_mse=0.06151  val_mse_uw=0.07446  2.304s/step
+  [grid5] step   10/400  train_mse=0.07133  reg=0.000e+00  val_mse=0.06828  val_mse_uw=0.07892  2.316s/step
+  [grid5] step   20/400  train_mse=0.06741  reg=0.000e+00  val_mse=0.06423  val_mse_uw=0.07680  2.415s/step
+  [grid5] step   30/400  train_mse=0.06548  reg=0.000e+00  val_mse=0.06232  val_mse_uw=0.07536  2.511s/step
+  [grid5] step   40/400  train_mse=0.06430  reg=0.000e+00  val_mse=0.06132  val_mse_uw=0.07430  2.498s/step
+  [grid5] step   50/400  train_mse=0.06334  reg=0.000e+00  val_mse=0.06029  val_mse_uw=0.07310  2.293s/step
+  [grid5] step   60/400  train_mse=0.06236  reg=0.000e+00  val_mse=0.05940  val_mse_uw=0.07210  2.506s/step
+  [grid5] step   70/400  train_mse=0.06133  reg=0.000e+00  val_mse=0.05822  val_mse_uw=0.07084  2.411s/step
+  [grid5] step   80/400  train_mse=0.06041  reg=0.000e+00  val_mse=0.05729  val_mse_uw=0.06990  2.510s/step
+  [grid5] step   90/400  train_mse=0.05970  reg=0.000e+00  val_mse=0.05663  val_mse_uw=0.06907  2.409s/step
+  [grid5] step  100/400  train_mse=0.05904  reg=0.000e+00  val_mse=0.05593  val_mse_uw=0.06839  2.409s/step
+  [grid5] step  110/400  train_mse=0.05869  reg=0.000e+00  val_mse=0.05555  val_mse_uw=0.06802  2.512s/step
+  [grid5] step  120/400  train_mse=0.05839  reg=0.000e+00  val_mse=0.05529  val_mse_uw=0.06769  2.516s/step
+  [grid5] step  130/400  train_mse=0.05786  reg=0.000e+00  val_mse=0.05482  val_mse_uw=0.06709  2.511s/step
+  [grid5] step  140/400  train_mse=0.05719  reg=0.000e+00  val_mse=0.05408  val_mse_uw=0.06616  2.394s/step
+  [grid5] step  150/400  train_mse=0.05631  reg=0.000e+00  val_mse=0.05327  val_mse_uw=0.06520  2.291s/step
+  [grid5] step  160/400  train_mse=0.05600  reg=0.000e+00  val_mse=0.05292  val_mse_uw=0.06492  2.509s/step
+  [grid5] step  170/400  train_mse=0.05574  reg=0.000e+00  val_mse=0.05271  val_mse_uw=0.06469  2.304s/step
+  [grid5] step  180/400  train_mse=0.05552  reg=0.000e+00  val_mse=0.05249  val_mse_uw=0.06447  2.416s/step
+  [grid5] step  190/400  train_mse=0.05524  reg=0.000e+00  val_mse=0.05222  val_mse_uw=0.06416  2.200s/step
+  [grid5] step  200/400  train_mse=0.05490  reg=0.000e+00  val_mse=0.05187  val_mse_uw=0.06374  2.403s/step
+  [grid5] step  210/400  train_mse=0.05445  reg=0.000e+00  val_mse=0.05147  val_mse_uw=0.06322  2.605s/step
+  [grid5] step  220/400  train_mse=0.05381  reg=0.000e+00  val_mse=0.05095  val_mse_uw=0.06253  2.187s/step
+  [grid5] step  230/400  train_mse=0.05324  reg=0.000e+00  val_mse=0.05044  val_mse_uw=0.06193  2.516s/step
+  [grid5] step  240/400  train_mse=0.05276  reg=0.000e+00  val_mse=0.05003  val_mse_uw=0.06148  2.503s/step
+  [grid5] step  250/400  train_mse=0.05232  reg=0.000e+00  val_mse=0.04972  val_mse_uw=0.06110  2.503s/step
+  [grid5] step  260/400  train_mse=0.05195  reg=0.000e+00  val_mse=0.04934  val_mse_uw=0.06072  2.504s/step
+  [grid5] step  270/400  train_mse=0.05158  reg=0.000e+00  val_mse=0.04908  val_mse_uw=0.06039  2.292s/step
+  [grid5] step  280/400  train_mse=0.05129  reg=0.000e+00  val_mse=0.04885  val_mse_uw=0.06012  2.297s/step
+  [grid5] step  290/400  train_mse=0.05099  reg=0.000e+00  val_mse=0.04864  val_mse_uw=0.05985  2.499s/step
+  [grid5] step  300/400  train_mse=0.05076  reg=0.000e+00  val_mse=0.04844  val_mse_uw=0.05964  2.400s/step
+  [grid5] step  310/400  train_mse=0.05058  reg=0.000e+00  val_mse=0.04824  val_mse_uw=0.05944  2.494s/step
+  [grid5] step  320/400  train_mse=0.05040  reg=0.000e+00  val_mse=0.04807  val_mse_uw=0.05926  2.497s/step
+  [grid5] step  330/400  train_mse=0.05026  reg=0.000e+00  val_mse=0.04795  val_mse_uw=0.05913  2.183s/step
+  [grid5] step  340/400  train_mse=0.05014  reg=0.000e+00  val_mse=0.04784  val_mse_uw=0.05901  2.389s/step
+  [grid5] step  350/400  train_mse=0.05000  reg=0.000e+00  val_mse=0.04779  val_mse_uw=0.05891  2.500s/step
+  [grid5] step  360/400  train_mse=0.04988  reg=0.000e+00  val_mse=0.04767  val_mse_uw=0.05880  2.400s/step
+  [grid5] step  370/400  train_mse=0.04973  reg=0.000e+00  val_mse=0.04757  val_mse_uw=0.05866  2.496s/step
+  [grid5] step  380/400  train_mse=0.04956  reg=0.000e+00  val_mse=0.04745  val_mse_uw=0.05850  2.304s/step
+  [grid5] step  390/400  train_mse=0.04943  reg=0.000e+00  val_mse=0.04731  val_mse_uw=0.05836  2.402s/step
+  [grid5] step  400/400  train_mse=0.04933  reg=0.000e+00  val_mse=0.04721  val_mse_uw=0.05826  2.508s/step
+  [grid10] step   10/400  train_mse=0.05399  reg=0.000e+00  val_mse=0.05174  val_mse_uw=0.06250  2.929s/step
+  [grid10] step   20/400  train_mse=0.05177  reg=0.000e+00  val_mse=0.04956  val_mse_uw=0.06059  3.061s/step
+  [grid10] step   30/400  train_mse=0.05096  reg=0.000e+00  val_mse=0.04881  val_mse_uw=0.05993  3.059s/step
+  [grid10] step   40/400  train_mse=0.05054  reg=0.000e+00  val_mse=0.04849  val_mse_uw=0.05960  2.929s/step
+  [grid10] step   50/400  train_mse=0.05021  reg=0.000e+00  val_mse=0.04824  val_mse_uw=0.05930  3.179s/step
+  [grid10] step   60/400  train_mse=0.04995  reg=0.000e+00  val_mse=0.04801  val_mse_uw=0.05907  2.928s/step
+  [grid10] step   70/400  train_mse=0.04973  reg=0.000e+00  val_mse=0.04783  val_mse_uw=0.05887  2.670s/step
+  [grid10] step   80/400  train_mse=0.04951  reg=0.000e+00  val_mse=0.04765  val_mse_uw=0.05866  2.804s/step
+  [grid10] step   90/400  train_mse=0.04932  reg=0.000e+00  val_mse=0.04748  val_mse_uw=0.05848  2.800s/step
+  [grid10] step  100/400  train_mse=0.04917  reg=0.000e+00  val_mse=0.04739  val_mse_uw=0.05835  3.179s/step
+  [grid10] step  110/400  train_mse=0.04902  reg=0.000e+00  val_mse=0.04728  val_mse_uw=0.05822  2.925s/step
+  [grid10] step  120/400  train_mse=0.04885  reg=0.000e+00  val_mse=0.04708  val_mse_uw=0.05800  3.051s/step
+  [grid10] step  130/400  train_mse=0.04869  reg=0.000e+00  val_mse=0.04693  val_mse_uw=0.05783  2.809s/step
+  [grid10] step  140/400  train_mse=0.04848  reg=0.000e+00  val_mse=0.04678  val_mse_uw=0.05764  2.677s/step
+  [grid10] step  150/400  train_mse=0.04832  reg=0.000e+00  val_mse=0.04660  val_mse_uw=0.05745  2.940s/step
+  [grid10] step  160/400  train_mse=0.04815  reg=0.000e+00  val_mse=0.04647  val_mse_uw=0.05728  2.807s/step
+  [grid10] step  170/400  train_mse=0.04805  reg=0.000e+00  val_mse=0.04637  val_mse_uw=0.05719  2.930s/step
+  [grid10] step  180/400  train_mse=0.04791  reg=0.000e+00  val_mse=0.04616  val_mse_uw=0.05698  3.062s/step
+  [grid10] step  190/400  train_mse=0.04778  reg=0.000e+00  val_mse=0.04608  val_mse_uw=0.05685  3.185s/step
+  [grid10] step  200/400  train_mse=0.04768  reg=0.000e+00  val_mse=0.04598  val_mse_uw=0.05675  2.927s/step
+  [grid10] step  210/400  train_mse=0.04759  reg=0.000e+00  val_mse=0.04591  val_mse_uw=0.05665  3.052s/step
+  [grid10] step  220/400  train_mse=0.04748  reg=0.000e+00  val_mse=0.04584  val_mse_uw=0.05652  2.921s/step
+  [grid10] step  230/400  train_mse=0.04723  reg=0.000e+00  val_mse=0.04566  val_mse_uw=0.05622  2.929s/step
+  [grid10] step  240/400  train_mse=0.04689  reg=0.000e+00  val_mse=0.04534  val_mse_uw=0.05580  2.807s/step
+  [grid10] step  250/400  train_mse=0.04650  reg=0.000e+00  val_mse=0.04511  val_mse_uw=0.05537  2.802s/step
+  [grid10] step  260/400  train_mse=0.04612  reg=0.000e+00  val_mse=0.04473  val_mse_uw=0.05487  3.183s/step
+  [grid10] step  270/400  train_mse=0.04563  reg=0.000e+00  val_mse=0.04436  val_mse_uw=0.05429  2.930s/step
+  [grid10] step  280/400  train_mse=0.04497  reg=0.000e+00  val_mse=0.04359  val_mse_uw=0.05338  2.929s/step
+  [grid10] step  290/400  train_mse=0.04420  reg=0.000e+00  val_mse=0.04299  val_mse_uw=0.05240  2.927s/step
+  [grid10] step  300/400  train_mse=0.04297  reg=0.000e+00  val_mse=0.04177  val_mse_uw=0.05055  2.804s/step
+  [grid10] step  310/400  train_mse=0.04136  reg=0.000e+00  val_mse=0.04005  val_mse_uw=0.04834  3.178s/step
+  [grid10] step  320/400  train_mse=0.03950  reg=0.000e+00  val_mse=0.03829  val_mse_uw=0.04585  3.179s/step
+  [grid10] step  330/400  train_mse=0.03748  reg=0.000e+00  val_mse=0.03618  val_mse_uw=0.04358  2.676s/step
+  [grid10] step  340/400  train_mse=0.03531  reg=0.000e+00  val_mse=0.03422  val_mse_uw=0.04118  3.182s/step
+  [grid10] step  350/400  train_mse=0.03353  reg=0.000e+00  val_mse=0.03260  val_mse_uw=0.03912  2.800s/step
+  [grid10] step  360/400  train_mse=0.03192  reg=0.000e+00  val_mse=0.03106  val_mse_uw=0.03727  3.054s/step
+  [grid10] step  370/400  train_mse=0.03045  reg=0.000e+00  val_mse=0.02974  val_mse_uw=0.03572  2.807s/step
+  [grid10] step  380/400  train_mse=0.02928  reg=0.000e+00  val_mse=0.02871  val_mse_uw=0.03450  2.936s/step
+  [grid10] step  390/400  train_mse=0.02842  reg=0.000e+00  val_mse=0.02790  val_mse_uw=0.03352  2.676s/step
+  [grid10] step  400/400  train_mse=0.02766  reg=0.000e+00  val_mse=0.02709  val_mse_uw=0.03265  2.929s/step
+  done: 2985.9s  2.486s/step  best_val=0.02709  test_r2_mean=0.960
+
+all runs written to runs/stoich_1200/cuda
