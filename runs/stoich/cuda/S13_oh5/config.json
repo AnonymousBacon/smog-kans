@@ -1,0 +1,35 @@
+{
+  "width_hidden": [
+    16,
+    16,
+    16
+  ],
+  "grid": 3,
+  "k": 3,
+  "grid_eps": 0.0,
+  "grid_update_every": 10,
+  "grid_update_until": 50,
+  "grid_update_refine": false,
+  "lamb": 0.0,
+  "prune": false,
+  "prune_node_th": 0.01,
+  "prune_edge_th": 0.03,
+  "refine": [
+    5,
+    10
+  ],
+  "steps": 400,
+  "eval_every": 10,
+  "patience": 5,
+  "min_delta": 0.001,
+  "n_exps": 10000,
+  "dtype": "float32",
+  "seed": 42,
+  "transform": "log10_floor",
+  "species_weights": {
+    "OH": 5
+  },
+  "name": "S13_oh5",
+  "species": "all16",
+  "stoich": true
+}
