@@ -75,7 +75,9 @@ Everything else depends on runs being comparable and timed.
       stage, total wall-clock time. Peak memory is still not recorded.
 - [x] **Unfriendly data split.** Shuffled experiment-level train/val/test split, scalers
       fit on train only, checkpoints picked on val. The flag to reproduce the old
-      sequential split was not added -- nothing has needed it yet.
+      sequential split was not added -- nothing has needed it yet. Superseded by
+      `phase1.py --data <npz>`, which takes the split from the prebuilt dataset instead
+      of re-deriving it; the seed-derived path is still there for the CSV.
 - [ ] **Mudd SLURM script** (`slurm/run_cpu.sbatch`) that runs one config on CPU, so CPU
       hours can be used as soon as they're approved.
 
@@ -112,13 +114,53 @@ is 1e-4 at the most, and reg is not worth its cost on a 418-parameter net.
 Width `[11, 16, 16, 16, 11]`, 10K experiments, unfriendly split, same seed and the same
 total step budget for all three runs:
 
-- [ ] **2A: No L1.** lamb=0 the whole time.
-- [ ] **2B: L1 the whole time.** lamb=λ* (picked in Phase 1) from step 0 to the end.
-- [ ] **2C: L1 + prune.** Same as 2B, then prune, then retrain the pruned net at lamb=0
-      (optional grid refine).
+- [x] **2A: No L1.** lamb=0 the whole time. test R² 0.997 mean, 0.982 OH; 39 min CPU.
+- [x] **2B: L1 the whole time.** lamb=1e-4 from step 0. Slightly worse than 2A
+      (R² 0.996) for 2x the wall-clock time.
+- [ ] **2C: L1 + prune.** `prune()` removed nothing (width unchanged) and the first
+      refine stage went non-finite immediately after. Not diagnosed; not on the
+      critical path for the 10/6 deliverable.
 
 Report: val/test MSE, RMSE per species in ppb, sec/step, total wall-clock time, width
 after pruning, and baselines (XGBoost/FFNN from `baselines.py`) on the same split.
+
+**Superseded.** These ran on `log1p` inputs, the `max_z=20` outlier filter, and a split
+re-derived from the first 10K experiments of the CSV. The deliverable runs below change
+all three, so 2A/2B numbers are not comparable with anything after them.
+
+## Deliverable runs (10/6)
+
+`configs/deliverable.yaml` → `runs/deliverable/cpu/`, driven by
+
+    python phase1.py --config configs/deliverable.yaml \
+        --data data/baseline_10k/baseline_10k.npz --out runs/deliverable
+
+Two models, identical except for the loss weights: `A_unreg` (plain MSE) and `B_oh60`
+(OH weighted 60:1). Both `[11, 16, 16, 16, 11]`, lamb=0, 240 LBFGS steps split 80 per
+stage over grid 3 → 5 → 10, float32, **CPU**. Each writes `loss_curves.png` (train/val)
+and `scatter.png` (1:1 grid, one panel per species).
+
+Three things changed from Phase 2, all of them dataset-side:
+
+- **Fixed dataset.** `data/baseline_10k/baseline_10k.npz` is a random 10K subsample of
+  all 1.1M experiments with the 70/15/15 experiment-level split stored alongside it.
+  Phase 2 instead read the first 10K experiments off the CSV and re-derived the split
+  from a seed, so two runs only matched if they agreed on `n_exps` and `seed`. (The
+  first 10K turned out not to be an easier subset -- per-species initial-condition
+  ranges match the random subsample -- so this is reproducibility, not a bug in the
+  Phase 2 numbers.)
+- **Input transform.** `log1p` → `log10(x + per-species p1 of train)`. Every OH value
+  is below 1 ppb, where `log1p(x) ≈ x`, so OH was going in essentially untransformed:
+  skew 87 and max |z| 128, against < 6 for every other species. The new transform puts
+  OH at max |z| 5.5 and max skew 1.5. A flat `log10(x + 1e-12)` does **not** work -- it
+  moves the same problem onto HCHO/H2O2/ALD2, which have near-zero values.
+- **`max_z` removed.** It only ever existed to delete the OH outliers the old transform
+  manufactured: 128 experiments above 5σ under `log1p`, 3 under the new transform.
+
+Per-species weights are normalized to mean 1 inside `experiment.py`, so 60:1 stays 60:1
+but the objective keeps the same scale as the unweighted run and LBFGS sees comparable
+step sizes. Both weighted and unweighted MSE are logged every step; the weighted one
+picks the checkpoint, the unweighted one (`best_val_mse_uw`) is what compares A to B.
 
 ## Phase 3: Scale out
 

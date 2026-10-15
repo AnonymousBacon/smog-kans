@@ -1,0 +1,39 @@
+# where is the knee in the OH weight?
+#
+# at full size, weight 1 gives OH R2 0.899 with every other species >= 0.9955, and
+# weight 60 gives OH 0.948 but drops H2O2 to 0.674 and ALD2 to 0.743. so the weighting
+# does buy real OH accuracy -- it is just priced far too high at 60:1. this sweeps the
+# bracket at 3k experiments to find a weight that keeps most of the OH gain without
+# collapsing the rest, cheaply enough to run while the full-size runs are going.
+#
+# weight 1 is included so the ladder has its own 3k baseline; the full-size numbers are
+# not comparable across a change in dataset size.
+defaults:
+  width_hidden: [16, 16, 16]
+  grid: 3
+  k: 3
+  grid_eps: 0.0
+  grid_update_every: 10
+  grid_update_until: 50
+  lamb: 0.0
+  prune: false
+  prune_node_th: 1.0e-2
+  prune_edge_th: 3.0e-2
+  refine: [5, 10]
+  steps: 240
+  eval_every: 10
+  n_exps: 3000
+  dtype: float32
+  seed: 42
+  transform: log10_floor
+
+runs:
+  - name: oh1
+
+  - name: oh5
+    species_weights:
+      OH: 5
+
+  - name: oh20
+    species_weights:
+      OH: 20

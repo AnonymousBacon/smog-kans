@@ -31,6 +31,22 @@ def load_raw(csv_path, n_exps):
     return X, D, species
 
 
+def load_npz(path):
+    # prebuilt dataset: a random subsample of the full csv with the experiment-level
+    # split already fixed. reading the csv instead takes whichever experiments happen
+    # to come first and re-derives the split from a seed, so two runs only match if
+    # they agree on n_exps and seed. raw arrays are stored untransformed on purpose --
+    # build_dataset applies the transform and fits the scalers on train rows itself
+    d = np.load(path, allow_pickle=True)
+    species = [str(s) for s in d["species"]]
+    splits = (d["train_ids"], d["val_ids"], d["test_ids"])
+    X, D = d["X_raw"], d["D_raw"]
+    n_exps = X.shape[0] // N_STEPS_PER_EXP
+    print(f"loaded {os.path.basename(path)}: {n_exps} experiments, {X.shape[0]} rows")
+    print(f"Species ({len(species)}): {species}")
+    return X, D, species, splits, n_exps
+
+
 def split_experiments(n_exps, seed, frac=(0.7, 0.15, 0.15)):
     ids = np.random.default_rng(seed).permutation(n_exps)
     n_tr = int(frac[0] * n_exps)
@@ -50,8 +66,23 @@ def drop_outlier_exps(X_log, train_ids, val_ids, test_ids, max_z):
     return kept, dropped
 
 
-def build_dataset(X, D, train_ids, val_ids, test_ids, device, dtype, max_z=0.0):
-    X_log = np.log1p(X)
+def transform_inputs(X, train_rows, kind):
+    # log1p is only a log where x >> 1. every OH value is below 1 ppb, so log1p leaves
+    # OH essentially raw: skew 87 and max |z| 128 on the 10k set, against < 6 for every
+    # other species. that single species is what max_z was dropping experiments for.
+    # a per-species floor fixes it without breaking the species that sit near zero --
+    # a flat log10(x + 1e-12) moves the problem onto HCHO/H2O2/ALD2 instead
+    if kind == "log1p":
+        return np.log1p(X)
+    if kind == "log10_floor":
+        floor = np.maximum(np.percentile(X[train_rows], 1, axis=0), 1e-9)
+        return np.log10(X + floor)
+    raise ValueError(f"unknown transform {kind!r}")
+
+
+def build_dataset(X, D, train_ids, val_ids, test_ids, device, dtype, max_z=0.0,
+                  transform="log1p"):
+    X_log = transform_inputs(X, rows_for(train_ids), transform)
     dropped = [0, 0, 0]
     if max_z:
         (train_ids, val_ids, test_ids), dropped = drop_outlier_exps(
@@ -79,15 +110,36 @@ def make_model(width, grid, k, seed, device, train_input, grid_eps=0.0):
     return model
 
 
-def mse(pred, target):
-    return torch.mean((pred - target) ** 2)
+def make_weights(species, weights, device, dtype):
+    # normalized to mean 1 so the weighted loss stays on the same scale as the plain
+    # one. without that, weighting OH 60:1 multiplies the objective by ~6 and changes
+    # the lbfgs step sizes, which would confound the weighting with the optimizer
+    if not weights:
+        return None
+    w = torch.ones(len(species), device=device, dtype=dtype)
+    for name, val in weights.items():
+        if name not in species:
+            raise ValueError(f"species_weights names {name!r}, not in {species}")
+        w[species.index(name)] = float(val)
+    return w / w.mean()
+
+
+def mse(pred, target, w=None):
+    se = (pred - target) ** 2
+    if w is not None:
+        se = se * w
+    return torch.mean(se)
 
 
 @torch.no_grad()
-def eval_mse(model, x, y):
+def eval_mse(model, x, y, w=None):
+    # returns (weighted, unweighted). the weighted one is what training minimizes and
+    # what picks the checkpoint; the unweighted one is the only number comparable
+    # across runs with different weights
     save_act = model.save_act
     model.save_act = False
-    out = mse(model(x), y).item()
+    pred = model(x)
+    out = (mse(pred, y, w).item(), mse(pred, y).item())
     model.save_act = save_act
     return out
 
@@ -118,7 +170,8 @@ def grid_coverage(model, x):
     return cov
 
 
-def train_stage(model, ds, steps, lamb, eval_every, device, log, stage, grid_update=(0, 0)):
+def train_stage(model, ds, steps, lamb, eval_every, device, log, stage, grid_update=(0, 0),
+                w=None):
     model.save_act = lamb > 0
     opt = make_opt(model)
     x, y = ds["train_input"], ds["train_label"]
@@ -127,7 +180,8 @@ def train_stage(model, ds, steps, lamb, eval_every, device, log, stage, grid_upd
 
     def closure():
         opt.zero_grad()
-        loss = mse(model(x), y)
+        pred = model(x)
+        loss = mse(pred, y, w)
         if lamb > 0:
             reg = model.get_reg("edge_forward_spline_n", 1.0, 2.0, 0.0, 0.0)
         else:
@@ -136,6 +190,7 @@ def train_stage(model, ds, steps, lamb, eval_every, device, log, stage, grid_upd
         objective.backward()
         state["evals"] += 1
         state["loss"], state["reg"] = loss.item(), reg.item()
+        state["loss_uw"] = mse(pred.detach(), y).item()
         return objective
 
     best_val, best_state = float("inf"), None
@@ -152,18 +207,21 @@ def train_stage(model, ds, steps, lamb, eval_every, device, log, stage, grid_upd
         sync(device)
         dt = time.perf_counter() - t0
 
-        val = np.nan
+        val, val_uw = np.nan, np.nan
         if step % eval_every == 0 or step == steps:
-            val = eval_mse(model, ds["val_input"], ds["val_label"])
+            val, val_uw = eval_mse(model, ds["val_input"], ds["val_label"], w)
             if val < best_val:
                 best_val, best_state = val, copy.deepcopy(model.state_dict())
             print(f"  [{stage}] step {step:4d}/{steps}  train_mse={state['loss']:.5f}  "
-                  f"reg={state['reg']:.3e}  val_mse={val:.5f}  {dt:.3f}s/step")
+                  f"reg={state['reg']:.3e}  val_mse={val:.5f}  "
+                  f"val_mse_uw={val_uw:.5f}  {dt:.3f}s/step")
 
         log["stage"].append(stage)
         log["train_mse"].append(state["loss"])
+        log["train_mse_uw"].append(state["loss_uw"])
         log["reg"].append(state["reg"])
         log["val_mse"].append(val)
+        log["val_mse_uw"].append(val_uw)
         log["step_time"].append(dt)
         log["closure_evals"].append(state["evals"])
 
@@ -190,26 +248,42 @@ def run(rc, X, D, species, splits, device, out_dir):
     torch.manual_seed(rc["seed"])
 
     train_ids, val_ids, test_ids = splits
+    # only subsets when the config asks for fewer experiments than the dataset holds,
+    # so the n_exps sweeps in phase1.yaml still work and a full-size run uses the split
+    # exactly as given
     n_train = int(0.7 * rc["n_exps"])
-    ds, scaler_y, dropped = build_dataset(X, D, train_ids[:n_train], val_ids, test_ids,
-                                          device, dtype, rc.get("max_z", 0.0))
+    if n_train < len(train_ids):
+        train_ids = train_ids[:n_train]
+    ds, scaler_y, dropped = build_dataset(X, D, train_ids, val_ids, test_ids, device,
+                                          dtype, rc.get("max_z", 0.0),
+                                          rc.get("transform", "log1p"))
     if any(dropped):
         print(f"  dropped outlier experiments (|z|>{rc['max_z']}): "
               f"train {dropped[0]}, val {dropped[1]}, test {dropped[2]}")
 
     n_sp = len(species)
+    w = make_weights(species, rc.get("species_weights"), device, dtype)
+    if w is not None:
+        print("  species weights (mean-normalized): "
+              + ", ".join(f"{s}={v:.3f}" for s, v in zip(species, w.tolist())))
     width = [n_sp] + list(rc["width_hidden"]) + [n_sp]
     model = make_model(width, rc["grid"], rc["k"], rc["seed"], device, ds["train_input"],
                        rc.get("grid_eps", 0.0))
     gu = (rc.get("grid_update_every", 0), rc.get("grid_update_until", 0))
+    # refine() already repositions the knots, so re-running update_grid inside a refine
+    # stage mostly just resets the lbfgs curvature history again. default stays True to
+    # reproduce the phase2/deliverable runs
+    gu_refine = gu if rc.get("grid_update_refine", True) else (0, 0)
 
     n_stages = 1 + len(rc["refine"]) + (1 if rc["prune"] else 0)
     stage_steps = rc["steps"] // n_stages
-    log = {k: [] for k in ("stage", "train_mse", "reg", "val_mse", "step_time", "closure_evals")}
+    log = {k: [] for k in ("stage", "train_mse", "train_mse_uw", "reg", "val_mse",
+                           "val_mse_uw", "step_time", "closure_evals")}
     events = []
 
     t_start = time.perf_counter()
-    model = train_stage(model, ds, stage_steps, rc["lamb"], rc["eval_every"], device, log, "train", gu)
+    model = train_stage(model, ds, stage_steps, rc["lamb"], rc["eval_every"], device, log,
+                        "train", gu, w)
 
     if rc["prune"]:
         cache_acts(model, ds["train_input"])
@@ -218,7 +292,8 @@ def run(rc, X, D, species, splits, device, out_dir):
         model.auto_save = False
         events.append((len(log["stage"]), "prune"))
         print(f"  pruned width {before} -> {model.width}")
-        model = train_stage(model, ds, stage_steps, 0.0, rc["eval_every"], device, log, "post_prune")
+        model = train_stage(model, ds, stage_steps, 0.0, rc["eval_every"], device, log,
+                            "post_prune", (0, 0), w)
 
     # refine keeps the run's lamb rather than dropping to 0: switching the objective
     # partway through is the thing "regularization: all or nothing" rules out, and it
@@ -229,7 +304,8 @@ def run(rc, X, D, species, splits, device, out_dir):
         model = model.refine(g)
         model.auto_save = False
         events.append((len(log["stage"]), f"grid={g}"))
-        model = train_stage(model, ds, stage_steps, rc["lamb"], rc["eval_every"], device, log, f"grid{g}", gu)
+        model = train_stage(model, ds, stage_steps, rc["lamb"], rc["eval_every"], device,
+                            log, f"grid{g}", gu_refine, w)
     total_time = time.perf_counter() - t_start
 
     with torch.no_grad():
@@ -254,12 +330,17 @@ def run(rc, X, D, species, splits, device, out_dir):
         "sec_per_step_median": float(np.median(step_time)),
         "closure_evals_mean": float(np.mean(log["closure_evals"])),
         "final_train_mse": float(log["train_mse"][-1]),
+        "final_train_mse_uw": float(log["train_mse_uw"][-1]),
         "best_val_mse": float(np.nanmin(np.array(log["val_mse"], dtype=float))),
+        "best_val_mse_uw": float(np.nanmin(np.array(log["val_mse_uw"], dtype=float))),
+        "species_weights": rc.get("species_weights") or {},
+        "transform": rc.get("transform", "log1p"),
         "test_mse_scaled": float(np.mean((pred - ds["test_label"].cpu().numpy()) ** 2)),
         "test_rmse_ppb": dict(zip(species, map(float, rmse))),
         "test_r2": dict(zip(species, map(float, r2))),
         "test_r2_mean": float(np.mean(r2)),
         "test_r2_mean_no_oh": float(np.mean([v for s, v in zip(species, r2) if s != "OH"])),
+        "test_r2_oh": float(r2[species.index("OH")]) if "OH" in species else float("nan"),
         "dropped_exps": dropped,
         "grid_coverage": grid_coverage(model, ds["train_input"]),
     }
@@ -289,8 +370,17 @@ def plot_loss(log, events, rc, path):
     fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
 
     ax = axes[0]
-    ax.semilogy(steps, log["train_mse"], label="train MSE", lw=1)
-    ax.semilogy(steps[has], val[has], "o-", ms=3, label="val MSE", lw=1)
+    weighted = bool(rc.get("species_weights"))
+    suffix = " (weighted)" if weighted else ""
+    ax.semilogy(steps, log["train_mse"], label=f"train MSE{suffix}", lw=1)
+    ax.semilogy(steps[has], val[has], "o-", ms=3, label=f"val MSE{suffix}", lw=1)
+    if weighted:
+        # the unweighted curves are the ones comparable with the unweighted run
+        val_uw = np.array(log["val_mse_uw"], dtype=float)
+        ax.semilogy(steps, log["train_mse_uw"], ls="--", lw=1, color="tab:blue",
+                    alpha=0.6, label="train MSE (unweighted)")
+        ax.semilogy(steps[has], val_uw[has], ls="--", lw=1, color="tab:orange",
+                    alpha=0.6, label="val MSE (unweighted)")
     if rc["lamb"] > 0:
         ax2 = ax.twinx()
         ax2.semilogy(steps, np.maximum(log["reg"], 1e-12), color="tab:green", alpha=0.6, lw=1, label="reg")

@@ -1,0 +1,36 @@
+# cheap ablation at 3k experiments, run in parallel with the full-size deliverable runs.
+# question: update_grid fires at steps 1/11/21/31/41 of *every* stage and rebuilds the
+# lbfgs optimizer each time, so a 240-step 3-stage run wipes the curvature history 15
+# times. refine() already repositions the knots, so the resets inside the refine stages
+# may be pure cost. decides the schedule for any further full-size run.
+defaults:
+  width_hidden: [16, 16, 16]
+  grid: 3
+  k: 3
+  grid_eps: 0.0
+  grid_update_every: 10
+  grid_update_until: 50
+  lamb: 0.0
+  prune: false
+  prune_node_th: 1.0e-2
+  prune_edge_th: 3.0e-2
+  refine: [5, 10]
+  steps: 240
+  eval_every: 10
+  n_exps: 3000
+  dtype: float32
+  seed: 42
+  transform: log10_floor
+
+runs:
+  # what the deliverable runs did: grid updates in every stage
+  - name: gu_all
+
+  # grid updates in the first stage only; refine stages keep their lbfgs history
+  - name: gu_stage1
+    grid_update_refine: false
+
+  # no grid updates anywhere. the knots stay where make_model put them
+  - name: gu_none
+    grid_update_every: 0
+    grid_update_until: 0

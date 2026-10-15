@@ -20,7 +20,8 @@ print = functools.partial(print, flush=True)
 
 SUMMARY_COLS = ["name", "device", "width_final", "n_params", "steps_run", "total_time_s",
                 "sec_per_step_mean", "closure_evals_mean", "final_train_mse", "best_val_mse",
-                "test_mse_scaled", "test_r2_mean", "test_r2_mean_no_oh"]
+                "best_val_mse_uw", "test_mse_scaled", "test_r2_mean", "test_r2_mean_no_oh",
+                "test_r2_oh"]
 
 
 def load_runs(path, only):
@@ -42,10 +43,12 @@ def write_summary(results, out_dir):
     names = [m["name"] for m, _ in results]
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
 
+    # unweighted throughout: a weighted run's val_mse is on its own scale, so charting
+    # it against an unweighted run's would compare two different quantities
     ax = axes[0, 0]
-    ax.barh(names, [m["best_val_mse"] for m, _ in results])
+    ax.barh(names, [m["best_val_mse_uw"] for m, _ in results])
     ax.set_xscale("log")
-    ax.set_xlabel("best val MSE (standardized)")
+    ax.set_xlabel("best val MSE (standardized, unweighted)")
     ax.invert_yaxis()
 
     ax = axes[0, 1]
@@ -54,7 +57,7 @@ def write_summary(results, out_dir):
     ax.invert_yaxis()
 
     for m, log in results:
-        val = np.array(log["val_mse"], dtype=float)
+        val = np.array(log["val_mse_uw"], dtype=float)
         has = ~np.isnan(val)
         steps = np.arange(1, len(val) + 1)
         wall = np.cumsum(log["step_time"])
@@ -63,7 +66,7 @@ def write_summary(results, out_dir):
     axes[1, 0].set_xlabel("LBFGS step")
     axes[1, 1].set_xlabel("wall-clock time (s)")
     for ax in axes[1]:
-        ax.set_ylabel("val MSE")
+        ax.set_ylabel("val MSE (unweighted)")
         ax.grid(alpha=0.3)
     axes[1, 1].legend(fontsize=7, loc="upper right")
     for ax in axes[0]:
@@ -79,6 +82,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--config", default=os.path.join(cfg.BASE_DIR, "configs", "phase1.yaml"))
     p.add_argument("--csv", default=cfg.CSV_PATH)
+    p.add_argument("--data", default=None,
+                   help="prebuilt dataset npz; overrides --csv and the derived split")
     p.add_argument("--device", default="cpu")
     p.add_argument("--threads", type=int, default=None)
     p.add_argument("--out", default=os.path.join(cfg.BASE_DIR, "runs", "phase1"))
@@ -98,9 +103,12 @@ def main():
     out_dir = os.path.join(args.out, device.type)
     os.makedirs(out_dir, exist_ok=True)
 
-    n_max = max(r["n_exps"] for r in runs)
-    X, D, species = experiment.load_raw(args.csv, n_max)
-    splits = experiment.split_experiments(n_max, runs[0]["seed"])
+    if args.data:
+        X, D, species, splits, n_max = experiment.load_npz(args.data)
+    else:
+        n_max = max(r["n_exps"] for r in runs)
+        X, D, species = experiment.load_raw(args.csv, n_max)
+        splits = experiment.split_experiments(n_max, runs[0]["seed"])
     print(f"experiments: {n_max}  train/val/test: {[len(s) for s in splits]}  "
           f"device: {device}  threads: {torch.get_num_threads()}")
 

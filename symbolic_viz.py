@@ -224,28 +224,6 @@ def plot_symbolic_snapping(edges, width, species=None, r2_threshold=0.9,
     return out_path
 
 
-def _mock_edges(width, seed=0):
-    """realistic stand-in metadata at true network scale, for layout testing"""
-    rng = np.random.default_rng(seed)
-    lib = ["x", "x^2", "sin", "tanh", "exp", "log", "sqrt", "1/x", "x^3", "abs"]
-    p   = np.array([28, 18, 13, 12, 9, 7, 5, 4, 2, 2], dtype=float); p /= p.sum()
-    edges = []
-    for l in range(len(width) - 1):
-        for i in range(width[l]):
-            for j in range(width[l + 1]):
-                u = rng.random()
-                if u < 0.12:
-                    edges.append(dict(l=l, i=i, j=j, status="pruned", fun="0", r2=None, complexity=0.0))
-                elif u < 0.62:
-                    edges.append(dict(l=l, i=i, j=j, status="snapped", fun=str(rng.choice(lib, p=p)),
-                                      r2=float(min(0.999, 0.9 + rng.beta(1.6, 3.2) * 0.1)),
-                                      complexity=float(rng.integers(1, 5))))
-                else:
-                    edges.append(dict(l=l, i=i, j=j, status="spline", fun=str(rng.choice(lib, p=p)),
-                                      r2=float(np.clip(rng.beta(5, 2.2) * 0.9, 0.05, 0.899)), complexity=None))
-    return edges
-
-
 if __name__ == "__main__":
     import json, os, sys
     meta_path = sys.argv[1] if len(sys.argv) > 1 else "/tmp/kan_probe_ckpt/symbolic_meta.json"
@@ -256,7 +234,4 @@ if __name__ == "__main__":
         plot_symbolic_snapping(meta["edges"], meta["width"], meta.get("species"),
                                meta.get("r2_threshold", 0.9), out)
     else:
-        w = [11, 16, 16, 16, 11]
-        sp = ["O3","NO","NO2","HCHO","HO2","H2O2","OH","ALD2","MGLY","MCO3","PAN"]
-        print("no real metadata yet — rendering mock at true scale")
-        plot_symbolic_snapping(_mock_edges(w), w, sp, 0.9, out)
+        sys.exit(f"no symbolic metadata at {meta_path}")

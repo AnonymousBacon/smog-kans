@@ -1,0 +1,91 @@
+device: cpu
+patched pykan curve2coef (rank-safe ridge solve; cuda gels workaround)
+loaded baseline_10k.npz: 10000 experiments, 120000 rows
+Species (11): ['O3', 'NO', 'NO2', 'HCHO', 'HO2', 'H2O2', 'OH', 'ALD2', 'MGLY', 'MCO3', 'PAN']
+experiments: 10000  train/val/test: [7000, 1500, 1500]  device: cpu  threads: 4
+
+=== gu_all ===
+{"width_hidden": [16, 16, 16], "grid": 3, "k": 3, "grid_eps": 0.0, "grid_update_every": 10, "grid_update_until": 50, "lamb": 0.0, "prune": false, "prune_node_th": 0.01, "prune_edge_th": 0.03, "refine": [5, 10], "steps": 240, "eval_every": 10, "n_exps": 3000, "dtype": "float32", "seed": 42, "transform": "log10_floor", "name": "gu_all"}
+  [train] step   10/80  train_mse=0.31027  reg=0.000e+00  val_mse=0.21250  val_mse_uw=0.21250  8.854s/step
+  [train] step   20/80  train_mse=0.17684  reg=0.000e+00  val_mse=0.08813  val_mse_uw=0.08813  7.868s/step
+  [train] step   30/80  train_mse=0.12670  reg=0.000e+00  val_mse=0.04134  val_mse_uw=0.04134  7.385s/step
+  [train] step   40/80  train_mse=0.11017  reg=0.000e+00  val_mse=0.02874  val_mse_uw=0.02874  8.120s/step
+  [train] step   50/80  train_mse=0.10059  reg=0.000e+00  val_mse=0.02290  val_mse_uw=0.02290  7.856s/step
+  [train] step   60/80  train_mse=0.08789  reg=0.000e+00  val_mse=0.01802  val_mse_uw=0.01802  8.202s/step
+  [train] step   70/80  train_mse=0.07298  reg=0.000e+00  val_mse=0.01650  val_mse_uw=0.01650  8.012s/step
+  [train] step   80/80  train_mse=0.06489  reg=0.000e+00  val_mse=0.01278  val_mse_uw=0.01278  8.208s/step
+  [grid5] step   10/80  train_mse=0.06117  reg=0.000e+00  val_mse=0.01044  val_mse_uw=0.01044  4.893s/step
+  [grid5] step   20/80  train_mse=0.05713  reg=0.000e+00  val_mse=0.00921  val_mse_uw=0.00921  4.228s/step
+  [grid5] step   30/80  train_mse=0.05391  reg=0.000e+00  val_mse=0.00822  val_mse_uw=0.00822  4.333s/step
+  [grid5] step   40/80  train_mse=0.05118  reg=0.000e+00  val_mse=0.00756  val_mse_uw=0.00756  4.334s/step
+  [grid5] step   50/80  train_mse=0.04838  reg=0.000e+00  val_mse=0.00698  val_mse_uw=0.00698  4.328s/step
+  [grid5] step   60/80  train_mse=0.03372  reg=0.000e+00  val_mse=0.01030  val_mse_uw=0.01030  4.675s/step
+  [grid5] step   70/80  train_mse=0.02104  reg=0.000e+00  val_mse=0.00923  val_mse_uw=0.00923  4.529s/step
+  [grid5] step   80/80  train_mse=0.01281  reg=0.000e+00  val_mse=0.00795  val_mse_uw=0.00795  4.591s/step
+  [grid10] step   10/80  train_mse=0.04437  reg=0.000e+00  val_mse=0.00623  val_mse_uw=0.00623  6.364s/step
+  [grid10] step   20/80  train_mse=0.04123  reg=0.000e+00  val_mse=0.00578  val_mse_uw=0.00578  6.150s/step
+  [grid10] step   30/80  train_mse=0.03803  reg=0.000e+00  val_mse=0.00565  val_mse_uw=0.00565  7.087s/step
+  [grid10] step   40/80  train_mse=0.03494  reg=0.000e+00  val_mse=0.00530  val_mse_uw=0.00530  6.808s/step
+  [grid10] step   50/80  train_mse=0.03071  reg=0.000e+00  val_mse=0.00548  val_mse_uw=0.00548  6.492s/step
+  [grid10] step   60/80  train_mse=0.02117  reg=0.000e+00  val_mse=0.00571  val_mse_uw=0.00571  6.492s/step
+  [grid10] step   70/80  train_mse=0.01380  reg=0.000e+00  val_mse=0.00597  val_mse_uw=0.00597  11.814s/step
+  [grid10] step   80/80  train_mse=0.00703  reg=0.000e+00  val_mse=0.00666  val_mse_uw=0.00666  11.996s/step
+  done: 1665.7s  6.919s/step  best_val=0.00530  test_r2_mean=0.983
+
+=== gu_stage1 ===
+{"width_hidden": [16, 16, 16], "grid": 3, "k": 3, "grid_eps": 0.0, "grid_update_every": 10, "grid_update_until": 50, "lamb": 0.0, "prune": false, "prune_node_th": 0.01, "prune_edge_th": 0.03, "refine": [5, 10], "steps": 240, "eval_every": 10, "n_exps": 3000, "dtype": "float32", "seed": 42, "transform": "log10_floor", "name": "gu_stage1", "grid_update_refine": false}
+  [train] step   10/80  train_mse=0.31027  reg=0.000e+00  val_mse=0.21250  val_mse_uw=0.21250  9.436s/step
+  [train] step   20/80  train_mse=0.17684  reg=0.000e+00  val_mse=0.08813  val_mse_uw=0.08813  7.742s/step
+  [train] step   30/80  train_mse=0.12670  reg=0.000e+00  val_mse=0.04134  val_mse_uw=0.04134  7.591s/step
+  [train] step   40/80  train_mse=0.11017  reg=0.000e+00  val_mse=0.02874  val_mse_uw=0.02874  8.023s/step
+  [train] step   50/80  train_mse=0.10059  reg=0.000e+00  val_mse=0.02290  val_mse_uw=0.02290  7.659s/step
+  [train] step   60/80  train_mse=0.08789  reg=0.000e+00  val_mse=0.01802  val_mse_uw=0.01802  7.568s/step
+  [train] step   70/80  train_mse=0.07298  reg=0.000e+00  val_mse=0.01650  val_mse_uw=0.01650  7.359s/step
+  [train] step   80/80  train_mse=0.06489  reg=0.000e+00  val_mse=0.01278  val_mse_uw=0.01278  7.763s/step
+  [grid5] step   10/80  train_mse=0.05980  reg=0.000e+00  val_mse=0.00990  val_mse_uw=0.00990  7.969s/step
+  [grid5] step   20/80  train_mse=0.05384  reg=0.000e+00  val_mse=0.00808  val_mse_uw=0.00808  7.908s/step
+  [grid5] step   30/80  train_mse=0.04567  reg=0.000e+00  val_mse=0.00786  val_mse_uw=0.00786  8.024s/step
+  [grid5] step   40/80  train_mse=0.03683  reg=0.000e+00  val_mse=0.00718  val_mse_uw=0.00718  8.363s/step
+  [grid5] step   50/80  train_mse=0.02623  reg=0.000e+00  val_mse=0.00883  val_mse_uw=0.00883  8.656s/step
+  [grid5] step   60/80  train_mse=0.01802  reg=0.000e+00  val_mse=0.00660  val_mse_uw=0.00660  7.974s/step
+  [grid5] step   70/80  train_mse=0.01265  reg=0.000e+00  val_mse=0.00678  val_mse_uw=0.00678  8.403s/step
+  [grid5] step   80/80  train_mse=0.00752  reg=0.000e+00  val_mse=0.00646  val_mse_uw=0.00646  8.357s/step
+  [grid10] step   10/80  train_mse=0.00741  reg=0.000e+00  val_mse=0.00663  val_mse_uw=0.00663  12.020s/step
+  [grid10] step   20/80  train_mse=0.00576  reg=0.000e+00  val_mse=0.00523  val_mse_uw=0.00523  12.119s/step
+  [grid10] step   30/80  train_mse=0.00474  reg=0.000e+00  val_mse=0.00475  val_mse_uw=0.00475  11.452s/step
+  [grid10] step   40/80  train_mse=0.00391  reg=0.000e+00  val_mse=0.00468  val_mse_uw=0.00468  11.102s/step
+  [grid10] step   50/80  train_mse=0.00319  reg=0.000e+00  val_mse=0.00426  val_mse_uw=0.00426  13.117s/step
+  [grid10] step   60/80  train_mse=0.00272  reg=0.000e+00  val_mse=0.00379  val_mse_uw=0.00379  12.536s/step
+  [grid10] step   70/80  train_mse=0.00241  reg=0.000e+00  val_mse=0.00336  val_mse_uw=0.00336  11.504s/step
+  [grid10] step   80/80  train_mse=0.00215  reg=0.000e+00  val_mse=0.00318  val_mse_uw=0.00318  11.991s/step
+  done: 2262.3s  9.403s/step  best_val=0.00318  test_r2_mean=0.992
+
+=== gu_none ===
+{"width_hidden": [16, 16, 16], "grid": 3, "k": 3, "grid_eps": 0.0, "grid_update_every": 0, "grid_update_until": 0, "lamb": 0.0, "prune": false, "prune_node_th": 0.01, "prune_edge_th": 0.03, "refine": [5, 10], "steps": 240, "eval_every": 10, "n_exps": 3000, "dtype": "float32", "seed": 42, "transform": "log10_floor", "name": "gu_none"}
+  [train] step   10/80  train_mse=0.30809  reg=0.000e+00  val_mse=0.21036  val_mse_uw=0.21036  7.268s/step
+  [train] step   20/80  train_mse=0.15428  reg=0.000e+00  val_mse=0.07043  val_mse_uw=0.07043  7.596s/step
+  [train] step   30/80  train_mse=0.12153  reg=0.000e+00  val_mse=0.04061  val_mse_uw=0.04061  7.988s/step
+  [train] step   40/80  train_mse=0.11001  reg=0.000e+00  val_mse=0.03128  val_mse_uw=0.03128  7.966s/step
+  [train] step   50/80  train_mse=0.10301  reg=0.000e+00  val_mse=0.02590  val_mse_uw=0.02590  7.954s/step
+  [train] step   60/80  train_mse=0.09756  reg=0.000e+00  val_mse=0.02385  val_mse_uw=0.02385  7.541s/step
+  [train] step   70/80  train_mse=0.09344  reg=0.000e+00  val_mse=0.02200  val_mse_uw=0.02200  7.407s/step
+  [train] step   80/80  train_mse=0.08903  reg=0.000e+00  val_mse=0.02066  val_mse_uw=0.02066  7.645s/step
+  [grid5] step   10/80  train_mse=0.09679  reg=0.000e+00  val_mse=0.02935  val_mse_uw=0.02935  7.319s/step
+  [grid5] step   20/80  train_mse=0.08963  reg=0.000e+00  val_mse=0.02246  val_mse_uw=0.02246  9.017s/step
+  [grid5] step   30/80  train_mse=0.08434  reg=0.000e+00  val_mse=0.01955  val_mse_uw=0.01955  7.626s/step
+  [grid5] step   40/80  train_mse=0.07819  reg=0.000e+00  val_mse=0.01872  val_mse_uw=0.01872  7.989s/step
+  [grid5] step   50/80  train_mse=0.06837  reg=0.000e+00  val_mse=0.02270  val_mse_uw=0.02270  7.187s/step
+  [grid5] step   60/80  train_mse=0.05305  reg=0.000e+00  val_mse=0.02395  val_mse_uw=0.02395  7.374s/step
+  [grid5] step   70/80  train_mse=0.03753  reg=0.000e+00  val_mse=0.02176  val_mse_uw=0.02176  7.667s/step
+  [grid5] step   80/80  train_mse=0.02583  reg=0.000e+00  val_mse=0.02148  val_mse_uw=0.02148  7.437s/step
+  [grid10] step   10/80  train_mse=0.12909  reg=0.000e+00  val_mse=0.13228  val_mse_uw=0.13228  14.358s/step
+  [grid10] step   20/80  train_mse=0.10129  reg=0.000e+00  val_mse=0.11633  val_mse_uw=0.11633  13.525s/step
+  [grid10] step   30/80  train_mse=0.08863  reg=0.000e+00  val_mse=0.10067  val_mse_uw=0.10067  11.736s/step
+  [grid10] step   40/80  train_mse=0.08216  reg=0.000e+00  val_mse=0.08043  val_mse_uw=0.08043  12.117s/step
+  [grid10] step   50/80  train_mse=0.07752  reg=0.000e+00  val_mse=0.11672  val_mse_uw=0.11672  11.759s/step
+  [grid10] step   60/80  train_mse=0.07552  reg=0.000e+00  val_mse=0.11256  val_mse_uw=0.11256  11.740s/step
+  [grid10] step   70/80  train_mse=0.07313  reg=0.000e+00  val_mse=0.09083  val_mse_uw=0.09083  11.771s/step
+  [grid10] step   80/80  train_mse=0.07000  reg=0.000e+00  val_mse=0.09592  val_mse_uw=0.09592  11.690s/step
+  done: 2170.8s  9.023s/step  best_val=0.01872  test_r2_mean=0.034
+
+all runs written to runs/ablate_gu/cpu

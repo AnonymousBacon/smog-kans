@@ -1,0 +1,33 @@
+# same two models as deliverable.yaml at a longer budget. the 240-step A_unreg run was
+# still descending at the end (val fell 7.5% over its last 10 steps), so "trains
+# convergently" is not yet demonstrated. 400 steps = 133 per stage.
+#
+# recipe is deliberately unchanged otherwise: the 240-step curves came out smooth and
+# monotone, so the deliverable run stays on the validated settings. the grid-update
+# schedule question is being answered separately at 3k in ablate_gridupdate.yaml rather
+# than gambled on here.
+defaults:
+  width_hidden: [16, 16, 16]
+  grid: 3
+  k: 3
+  grid_eps: 0.0
+  grid_update_every: 10
+  grid_update_until: 50
+  lamb: 0.0
+  prune: false
+  prune_node_th: 1.0e-2
+  prune_edge_th: 3.0e-2
+  refine: [5, 10]
+  steps: 400
+  eval_every: 10
+  n_exps: 10000
+  dtype: float32
+  seed: 42
+  transform: log10_floor
+
+runs:
+  - name: A_unreg_400
+
+  - name: B_oh60_400
+    species_weights:
+      OH: 60

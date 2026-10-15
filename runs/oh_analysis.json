@@ -1,0 +1,7 @@
+{
+  "ss_map_linear": 0.8483954914181173,
+  "ss_map_nonlinear": 0.9557252694361568,
+  "ss_route_dOH_ceiling": 0.7069020857906545,
+  "direct_dOH_gbm": 0.4087584130238856,
+  "median_abs_dOH_over_median_OH": 0.0787609126184719
+}
