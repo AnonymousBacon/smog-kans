@@ -14,7 +14,7 @@ defaults:
   refine: [5, 10]
   steps: 400
   eval_every: 10
-  # replaying 14 past runs, 3 evals ended a stage that later dropped val 60%, while 4 to 7 never cut a stage short of its best.
+  # replaying 11 past runs, 3 evals ended a stage that later dropped val 60%, while 4 to 7 never cut a stage short of its best.
   patience: 5
   min_delta: 1.0e-3
   n_exps: 10000
