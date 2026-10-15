@@ -92,10 +92,12 @@ class StoichHead(nn.Module):
         return (self.flux_ppb(f) @ self.S.T - self.y_mean) / self.y_scale
 
 
-# scales each flux by the spread of the least-squares fluxes that reproduce the training data.
-def make_head(S, D_train, scaler_y, device, dtype):
-    flux = np.linalg.pinv(S) @ D_train.T
-    scale = flux.std(axis=1)
+# gives every reaction a unit that moves the standardized loss equally, since OH's tiny scale otherwise makes its reactions hundreds of times more sensitive.
+def make_head(S, D_train, scaler_y, device, dtype, scaling="equal"):
+    if scaling == "equal":
+        scale = 1.0 / np.linalg.norm(S / scaler_y.scale_[:, None], axis=0)
+    else:
+        scale = (np.linalg.pinv(S) @ D_train.T).std(axis=1)
     scale = np.where(scale > 0, scale, 1.0)
     return StoichHead(S, scale, scaler_y.mean_, scaler_y.scale_, device, dtype)
 

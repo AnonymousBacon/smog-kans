@@ -290,7 +290,7 @@ def run(rc, X, D, species, splits, device, out_dir):
         D_train = D[rows_for(train_ids)]
         if not stoich.check_S(S, D_train, species):
             raise ValueError("stoichiometric matrix does not match the data, see check above")
-        head = stoich.make_head(S, D_train, scaler_y, device, dtype)
+        head = stoich.make_head(S, D_train, scaler_y, device, dtype, rc.get("head_scale", "equal"))
         n_out = S.shape[1]
     width = [n_sp] + list(rc["width_hidden"]) + [n_out]
     model = make_model(width, rc["grid"], rc["k"], rc["seed"], device, ds["train_input"],
