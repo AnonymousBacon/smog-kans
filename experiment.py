@@ -2,6 +2,7 @@ import copy
 import functools
 import json
 import os
+import signal
 import time
 
 import matplotlib
@@ -119,9 +120,9 @@ def build_dataset(X, D, train_ids, val_ids, test_ids, device, dtype, max_z=0.0,
     return ds, scaler_y, dropped
 
 
-def make_model(width, grid, k, seed, device, train_input, grid_eps=0.0):
+def make_model(width, grid, k, seed, device, train_input, grid_eps=0.0, symbolic=False):
     model = KAN(width=width, grid=grid, k=k, seed=seed, device=device,
-                auto_save=False, grid_eps=grid_eps, symbolic_enabled=False, save_act=False)
+                auto_save=False, grid_eps=grid_eps, symbolic_enabled=symbolic, save_act=False)
     model.update_grid(train_input)
     model.save_act = False
     return model
@@ -151,6 +152,18 @@ def predict(model, x, head=None):
     return out if head is None else head(out)
 
 
+# the kan's 13 flux outputs: its final output with the head, or the input to the fixed last layer without.
+@torch.no_grad()
+def fluxes(model, x, symbolic):
+    if not symbolic:
+        return model(x)
+    save_act = model.save_act
+    model.save_act = True
+    model(x)
+    model.save_act = save_act
+    return model.acts[-2]
+
+
 @torch.no_grad()
 def eval_mse(model, x, y, w=None, head=None):
     save_act = model.save_act
@@ -171,7 +184,9 @@ def make_opt(model):
                  tolerance_grad=1e-32, tolerance_change=1e-32, tolerance_ys=1e-32)
 
 
-def grid_coverage(model, x):
+# fraction of each spline layer's activations inside its grid. skip_last drops the fixed stoich layer in symbolic
+# mode, whose splines are masked off, so the last entry lines up with the head runs' last layer.
+def grid_coverage(model, x, skip_last=False):
     model.save_act = True
     with torch.no_grad():
         model(x)
@@ -182,7 +197,18 @@ def grid_coverage(model, x):
         hi = layer.grid[:, -layer.k - 1][None, :]
         cov.append(float(((a >= lo) & (a <= hi)).float().mean()))
     model.save_act = False
-    return cov
+    return cov[:-1] if skip_last else cov
+
+
+# set once a run is interrupted (timeout sends sigint): the current step finishes, the stage ends, later stages are
+# skipped, and the best checkpoint so far is still evaluated and saved. a handler instead of KeyboardInterrupt so
+# the signal can't land mid-eval or mid-save.
+INTERRUPTED = False
+
+
+def _on_sigint(signum, frame):
+    global INTERRUPTED
+    INTERRUPTED = True
 
 
 def train_stage(model, ds, steps, lamb, eval_every, device, log, stage, grid_update=(0, 0),
@@ -213,6 +239,10 @@ def train_stage(model, ds, steps, lamb, eval_every, device, log, stage, grid_upd
         state["evals"] = 0
         sync(device)
         t0 = time.perf_counter()
+        if INTERRUPTED:
+            print(f"  [{stage}] interrupted before step {step}, saving best checkpoint so far")
+            log["early_stops"].append((stage, step))
+            break
         if gu_every and step % gu_every == 1 % gu_every and step <= gu_until:
             model.update_grid(x)
             opt = make_opt(model)
@@ -223,8 +253,10 @@ def train_stage(model, ds, steps, lamb, eval_every, device, log, stage, grid_upd
         val, val_uw = np.nan, np.nan
         if step % eval_every == 0 or step == steps:
             val, val_uw = eval_mse(model, ds["val_input"], ds["val_label"], w, head)
-            # early stopping counts evals since the last real val improvement.
-            stale = 0 if val < best_val * (1 - min_delta) else stale + 1
+            # early stopping counts evals since the last real val improvement, but not while grid updates are still
+            # running: each one resets lbfgs and can bump val, which would end a stage before the grid has settled.
+            improved = val < best_val * (1 - min_delta)
+            stale = 0 if improved or (gu_every and step <= gu_until) else stale + 1
             if val < best_val:
                 best_val, best_state = val, copy.deepcopy(model.state_dict())
             print(f"  [{stage}] step {step:4d}/{steps}  train_mse={state['loss']:.5f}  "
@@ -263,6 +295,7 @@ def cache_acts(model, x):
 
 def run(rc, X, D, species, splits, device, out_dir):
     os.makedirs(out_dir, exist_ok=True)
+    signal.signal(signal.SIGINT, _on_sigint)
     dtype = DTYPES[rc["dtype"]]
     torch.set_default_dtype(dtype)
     torch.manual_seed(rc["seed"])
@@ -284,17 +317,26 @@ def run(rc, X, D, species, splits, device, out_dir):
         print("  species weights (mean-normalized): "
               + ", ".join(f"{s}={v:.3f}" for s, v in zip(species, w.tolist())))
     # with stoich on, the last kan layer outputs one flux per reaction instead of one tendency per species.
+    # stoich: symbolic is daniel's version, where one more kan layer fixed to S replaces the head.
     head, n_out = None, n_sp
+    symbolic = rc.get("stoich") == "symbolic"
+    if symbolic and (rc.get("flux_positive") or rc["prune"]):
+        raise ValueError("stoich: symbolic does not support flux_positive or prune")
     if rc.get("stoich"):
         S = stoich.stoich_matrix(species)
         D_train = D[rows_for(train_ids)]
         if not stoich.check_S(S, D_train, species):
             raise ValueError("stoichiometric matrix does not match the data, see check above")
-        head = stoich.make_head(S, D_train, scaler_y, device, dtype, rc.get("head_scale", "equal"))
+        head = stoich.make_head(S, D_train, scaler_y, device, dtype, rc.get("head_scale", "equal"),
+                                rc.get("flux_positive", False))
         n_out = S.shape[1]
-    width = [n_sp] + list(rc["width_hidden"]) + [n_out]
+    width = [n_sp] + list(rc["width_hidden"]) + [n_out] + ([n_sp] if symbolic else [])
     model = make_model(width, rc["grid"], rc["k"], rc["seed"], device, ds["train_input"],
-                       rc.get("grid_eps", 0.0))
+                       rc.get("grid_eps", 0.0), symbolic)
+    flux_head = head
+    if symbolic:
+        stoich.fix_stoich_layer(model, head)
+        head = None
     gu = (rc.get("grid_update_every", 0), rc.get("grid_update_until", 0))
     gu_refine = gu if rc.get("grid_update_refine", True) else (0, 0)
 
@@ -309,7 +351,7 @@ def run(rc, X, D, species, splits, device, out_dir):
     model = train_stage(model, ds, stage_steps, rc["lamb"], rc["eval_every"], device, log,
                         "train", gu, w, **es)
 
-    if rc["prune"]:
+    if rc["prune"] and not INTERRUPTED:
         cache_acts(model, ds["train_input"])
         before = list(model.width)
         model = model.prune(node_th=rc["prune_node_th"], edge_th=rc["prune_edge_th"])
@@ -320,9 +362,13 @@ def run(rc, X, D, species, splits, device, out_dir):
                             "post_prune", (0, 0), w, **es)
 
     for g in rc["refine"]:
+        if INTERRUPTED:
+            break
         cache_acts(model, ds["train_input"])
         model = model.refine(g)
         model.auto_save = False
+        if symbolic:
+            stoich.freeze_stoich_layer(model)
         events.append((len(log["stage"]), f"grid={g}"))
         model = train_stage(model, ds, stage_steps, rc["lamb"], rc["eval_every"], device,
                             log, f"grid{g}", gu_refine, w, **es)
@@ -331,7 +377,8 @@ def run(rc, X, D, species, splits, device, out_dir):
     with torch.no_grad():
         model.save_act = False
         pred = predict(model, ds["test_input"], head).cpu().numpy()
-        flux = None if head is None else head.flux_ppb(model(ds["test_input"])).cpu().numpy()
+        flux = None if flux_head is None else flux_head.flux_ppb(
+            fluxes(model, ds["test_input"], symbolic)).cpu().numpy()
     pred_ppb = scaler_y.inverse_transform(pred)
     true_ppb = scaler_y.inverse_transform(ds["test_label"].cpu().numpy())
     rmse = np.sqrt(np.mean((pred_ppb - true_ppb) ** 2, axis=0))
@@ -350,8 +397,8 @@ def run(rc, X, D, species, splits, device, out_dir):
         "sec_per_step_mean": float(step_time.mean()),
         "sec_per_step_median": float(np.median(step_time)),
         "closure_evals_mean": float(np.mean(log["closure_evals"])),
-        "final_train_mse": float(log["train_mse"][-1]),
-        "final_train_mse_uw": float(log["train_mse_uw"][-1]),
+        "final_train_mse": float(log["train_mse"][-1]) if log["train_mse"] else float("nan"),
+        "final_train_mse_uw": float(log["train_mse_uw"][-1]) if log["train_mse_uw"] else float("nan"),
         "best_val_mse": float(np.nanmin(np.array(log["val_mse"], dtype=float))),
         "best_val_mse_uw": float(np.nanmin(np.array(log["val_mse_uw"], dtype=float))),
         "species_weights": rc.get("species_weights") or {},
@@ -363,7 +410,8 @@ def run(rc, X, D, species, splits, device, out_dir):
         "test_r2_mean_no_oh": float(np.mean([v for s, v in zip(species, r2) if s != "OH"])),
         "test_r2_oh": float(r2[species.index("OH")]) if "OH" in species else float("nan"),
         "dropped_exps": dropped,
-        "grid_coverage": grid_coverage(model, ds["train_input"]),
+        "grid_coverage": grid_coverage(model, ds["train_input"], symbolic),
+        "interrupted": INTERRUPTED,
         "early_stops": [list(e) for e in log["early_stops"]],
     }
     # r2 over the original 11 species keeps 16-species runs comparable with best_oh5.

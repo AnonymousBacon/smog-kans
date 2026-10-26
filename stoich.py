@@ -74,8 +74,9 @@ def check_S(S, D, species, tol=1e-6):
 
 # turns the kan's 13 flux outputs into standardized tendencies, applying S in ppb so atoms are conserved exactly.
 class StoichHead(nn.Module):
-    def __init__(self, S, flux_scale, y_mean, y_scale, device, dtype):
+    def __init__(self, S, flux_scale, y_mean, y_scale, device, dtype, positive=False):
         super().__init__()
+        self.positive = positive
 
         def t(a):
             return torch.tensor(np.asarray(a), dtype=dtype, device=device)
@@ -85,7 +86,10 @@ class StoichHead(nn.Module):
         self.register_buffer("y_mean", t(y_mean))
         self.register_buffer("y_scale", t(y_scale))
 
+    # every reaction in the mechanism runs one way only, so positive=True keeps fluxes >= 0 through a softplus.
     def flux_ppb(self, f):
+        if self.positive:
+            f = nn.functional.softplus(f)
         return f * self.flux_scale
 
     def forward(self, f):
@@ -93,20 +97,48 @@ class StoichHead(nn.Module):
 
 
 # gives every reaction a unit that moves the standardized loss equally, since OH's tiny scale otherwise makes its reactions hundreds of times more sensitive.
-def make_head(S, D_train, scaler_y, device, dtype, scaling="equal"):
+def make_head(S, D_train, scaler_y, device, dtype, scaling="equal", positive=False):
     if scaling == "equal":
         scale = 1.0 / np.linalg.norm(S / scaler_y.scale_[:, None], axis=0)
     else:
         scale = (np.linalg.pinv(S) @ D_train.T).std(axis=1)
     scale = np.where(scale > 0, scale, 1.0)
-    return StoichHead(S, scale, scaler_y.mean_, scaler_y.scale_, device, dtype)
+    return StoichHead(S, scale, scaler_y.mean_, scaler_y.scale_, device, dtype, positive)
+
+
+# daniel getter's version: rather than a head after the kan, the kan's own last layer is fixed to S through pykan's
+# symbolic edges, so plot/prune/symbolic tools see the stoichiometry. edge (flux i -> species j) is c * x with the
+# same coefficients StoichHead uses, so both compute the same function; the coefficient sits in the edge's affine
+# slot under the library name "x" because a lambda saves as "anonymous" and loadckpt can't read it back.
+def fix_stoich_layer(model, head):
+    L = model.depth - 1
+    layer = model.symbolic_fun[L]
+    if (layer.in_dim, layer.out_dim) != tuple(head.S.T.shape):
+        raise ValueError(f"last layer is {layer.in_dim}->{layer.out_dim}, S needs {tuple(head.S.T.shape)}")
+    for i in range(layer.in_dim):
+        for j in range(layer.out_dim):
+            model.fix_symbolic(L, i, j, "x", fit_params_bool=False, verbose=False, log_history=False)
+    with torch.no_grad():
+        # affine is (out, in, 4) holding a, b, c, d of c * f(a * x + b) + d.
+        layer.affine[:, :, 2] = head.S * head.flux_scale[None, :] / head.y_scale[:, None]
+        model.node_bias[L].copy_(-head.y_mean / head.y_scale)
+    freeze_stoich_layer(model)
+
+
+# refine() builds a fresh last layer with trainable splines (masked off, but still counted), so call this after it too.
+def freeze_stoich_layer(model):
+    L = model.depth - 1
+    for p in list(model.act_fun[L].parameters()) + list(model.symbolic_fun[L].parameters()):
+        p.requires_grad_(False)
 
 
 if __name__ == "__main__":
     import experiment
 
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "baseline_10k",
-                        "baseline_10k.npz")
+    import sys
+
+    path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "data", "baseline_10k", "baseline_10k.npz")
     X, D, species, (train_ids, _, _), _ = experiment.load_npz(path, all_species=True)
     D_train = D[experiment.rows_for(train_ids)]
     print("data atom residual (C,H,N,O):", np.abs(atoms(species) @ D_train.T).max(axis=1))

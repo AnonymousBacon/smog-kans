@@ -1,0 +1,56 @@
+# why S13 trails U16 (test r2 0.960 vs 0.997): the 1200-step run was still dropping fast at the end, 16% of
+# last-layer activations sat off the grid, and 30-57% of R1/R2/R7/R8 fluxes came out negative. one run per cause,
+# plus U16 at the same 1200 steps since the only U16 so far stopped at 400. S13_1200 repeats the 10/15 run on the
+# new machine and S13_sym_1200 is daniel's fixed-layer version of it, which should match it up to float error.
+defaults:
+  width_hidden: [16, 16, 16]
+  grid: 3
+  k: 3
+  grid_eps: 0.0
+  grid_update_every: 10
+  grid_update_until: 50
+  grid_update_refine: false
+  lamb: 0.0
+  prune: false
+  prune_node_th: 1.0e-2
+  prune_edge_th: 3.0e-2
+  refine: [5, 10]
+  steps: 1200
+  eval_every: 10
+  patience: 5
+  min_delta: 1.0e-3
+  n_exps: 10000
+  dtype: float32
+  seed: 42
+  transform: log10_floor
+  species_weights:
+    OH: 5
+  species: all16
+
+runs:
+  - name: U16_1200
+
+  - name: S13_1200
+    stoich: true
+
+  - name: S13_sym_1200
+    stoich: symbolic
+
+  - name: S13_3600
+    stoich: true
+    steps: 3600
+
+  - name: S13_gu_1200
+    stoich: true
+    grid_update_until: 200
+    grid_update_refine: true
+
+  - name: S13_pos_1200
+    stoich: true
+    flux_positive: true
+
+  - name: S13_pos_gu_1200
+    stoich: true
+    flux_positive: true
+    grid_update_until: 200
+    grid_update_refine: true

@@ -4,6 +4,7 @@ import functools
 import json
 import os
 import sys
+import traceback
 
 import matplotlib
 matplotlib.use("Agg")
@@ -122,19 +123,29 @@ def main():
     print(f"experiments: {n_max}  train/val/test: {[len(s) for s in splits]}  "
           f"device: {device}  threads: {torch.get_num_threads()}")
 
-    results = []
+    results, failed = [], []
     for rc in runs:
         print(f"\n=== {rc['name']} ===")
         print(json.dumps(rc))
         if args.data:
             X, D, species, splits = view(rc)
-        metrics, log = experiment.run(rc, X, D, species, splits, device, os.path.join(out_dir, rc["name"]))
+        # one failed run is logged and skipped so an unattended batch still finishes the rest.
+        try:
+            metrics, log = experiment.run(rc, X, D, species, splits, device,
+                                          os.path.join(out_dir, rc["name"]))
+        except Exception:
+            traceback.print_exc()
+            print(f"  FAILED: {rc['name']}")
+            failed.append(rc["name"])
+            continue
         print(f"  done: {metrics['total_time_s']:.1f}s  {metrics['sec_per_step_mean']:.3f}s/step  "
               f"best_val={metrics['best_val_mse']:.5f}  test_r2_mean={metrics['test_r2_mean']:.3f}")
         results.append((metrics, log))
         write_summary(results, out_dir)
 
     print(f"\nall runs written to {out_dir}")
+    if failed:
+        sys.exit(f"failed runs: {', '.join(failed)}")
 
 
 if __name__ == "__main__":
