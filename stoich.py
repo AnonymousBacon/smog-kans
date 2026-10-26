@@ -74,7 +74,7 @@ def check_S(S, D, species, tol=1e-6):
 
 # turns the kan's 13 flux outputs into standardized tendencies, applying S in ppb so atoms are conserved exactly.
 class StoichHead(nn.Module):
-    def __init__(self, S, flux_scale, y_mean, y_scale, device, dtype, positive=False):
+    def __init__(self, S, flux_scale, y_mean, y_scale, device, dtype, positive=False, mix=None):
         super().__init__()
         self.positive = positive
 
@@ -85,25 +85,38 @@ class StoichHead(nn.Module):
         self.register_buffer("flux_scale", t(flux_scale))
         self.register_buffer("y_mean", t(y_mean))
         self.register_buffer("y_scale", t(y_scale))
+        # mixes the kan outputs into reaction fluxes; identity unless the head is whitened.
+        self.register_buffer("mix", t(np.eye(S.shape[1]) if mix is None else mix))
 
     # every reaction in the mechanism runs one way only, so positive=True keeps fluxes >= 0 through a softplus.
     def flux_ppb(self, f):
         if self.positive:
             f = nn.functional.softplus(f)
-        return f * self.flux_scale
+        return (f @ self.mix.T) * self.flux_scale
 
     def forward(self, f):
         return (self.flux_ppb(f) @ self.S.T - self.y_mean) / self.y_scale
 
 
 # gives every reaction a unit that moves the standardized loss equally, since OH's tiny scale otherwise makes its reactions hundreds of times more sensitive.
+# "whiten" goes further: the equal-scaled map from kan outputs to standardized tendencies still has singular values
+# from ~2.4 down to ~1e-3, so the kan had to output values in the hundreds along the weak directions. mixing through
+# V / sigma makes each of the 11 kan outputs that reach the loss move it along one orthonormal direction; the 2 null
+# directions keep unit weight and never touch the loss. S is still applied in ppb, so atoms balance as before.
 def make_head(S, D_train, scaler_y, device, dtype, scaling="equal", positive=False):
-    if scaling == "equal":
+    mix = None
+    if scaling in ("equal", "whiten"):
         scale = 1.0 / np.linalg.norm(S / scaler_y.scale_[:, None], axis=0)
     else:
         scale = (np.linalg.pinv(S) @ D_train.T).std(axis=1)
     scale = np.where(scale > 0, scale, 1.0)
-    return StoichHead(S, scale, scaler_y.mean_, scaler_y.scale_, device, dtype, positive)
+    if scaling == "whiten":
+        if positive:
+            raise ValueError("head_scale: whiten mixes fluxes, so it does not support flux_positive")
+        _, sig, Vt = np.linalg.svd(S * scale[None, :] / scaler_y.scale_[:, None])
+        inv = np.where(sig > 1e-9 * sig[0], 1.0 / np.maximum(sig, 1e-300), 1.0)
+        mix = Vt.T * inv[None, :]
+    return StoichHead(S, scale, scaler_y.mean_, scaler_y.scale_, device, dtype, positive, mix)
 
 
 # daniel getter's version: rather than a head after the kan, the kan's own last layer is fixed to S through pykan's
@@ -120,7 +133,7 @@ def fix_stoich_layer(model, head):
             model.fix_symbolic(L, i, j, "x", fit_params_bool=False, verbose=False, log_history=False)
     with torch.no_grad():
         # affine is (out, in, 4) holding a, b, c, d of c * f(a * x + b) + d.
-        layer.affine[:, :, 2] = head.S * head.flux_scale[None, :] / head.y_scale[:, None]
+        layer.affine[:, :, 2] = (head.S * head.flux_scale[None, :]) @ head.mix / head.y_scale[:, None]
         model.node_bias[L].copy_(-head.y_mean / head.y_scale)
     freeze_stoich_layer(model)
 

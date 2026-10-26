@@ -1,0 +1,34 @@
+# round 2: the stoich runs train ~20x slower than U16 (val 0.039 after the first 1200-step stage of S13_3600 vs 0.002
+# after 400 for U16) with train ~ val, so it is the optimizer, not capacity. the equal-scaled head maps the kan outputs
+# to standardized tendencies with singular values 2.45 down to 0.0013, so the kan must output std up to ~530 along the
+# weak directions. head_scale: whiten removes that. r2_S13_wh_3600 changes only the head vs S13_3600 (same seed, same
+# 1200 steps per stage), so the two val curves compare step by step. one run alone fits the 120 min (~91 min solo).
+defaults:
+  width_hidden: [16, 16, 16]
+  grid: 3
+  k: 3
+  grid_eps: 0.0
+  grid_update_every: 10
+  grid_update_until: 50
+  grid_update_refine: false
+  lamb: 0.0
+  prune: false
+  prune_node_th: 1.0e-2
+  prune_edge_th: 3.0e-2
+  refine: [5, 10]
+  steps: 3600
+  eval_every: 10
+  patience: 5
+  min_delta: 1.0e-3
+  n_exps: 10000
+  dtype: float32
+  seed: 42
+  transform: log10_floor
+  species_weights:
+    OH: 5
+  species: all16
+
+runs:
+  - name: r2_S13_wh_3600
+    stoich: true
+    head_scale: whiten
