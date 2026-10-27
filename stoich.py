@@ -1,4 +1,4 @@
-# fixed stoichiometric output layer from sturm and wexler 2022; run this file to check S against the data.
+# fixed stoichiometric output layer from sturm and wexler 2022
 import os
 
 import numpy as np
@@ -16,7 +16,7 @@ COMPOSITION = {
     "MCO3": (2, 3, 0, 3), "PAN": (2, 3, 1, 5), "H2O": (0, 2, 0, 1), "O2": (0, 0, 0, 2),
 }
 
-# the 13 reactions of the julia photochemical mechanism in table 1 order, products positive and reactants negative.
+# the 13 reactions of the julia photochemical mechanism in table 1 order, products positive and reactants negative
 REACTIONS = [
     {"NO2": -1, "O2": -1, "NO": 1, "O3": 1},
     {"O3": -1, "NO": -1, "NO2": 1, "O2": 1},
@@ -98,11 +98,7 @@ class StoichHead(nn.Module):
         return (self.flux_ppb(f) @ self.S.T - self.y_mean) / self.y_scale
 
 
-# gives every reaction a unit that moves the standardized loss equally, since OH's tiny scale otherwise makes its reactions hundreds of times more sensitive.
-# "whiten" goes further: the equal-scaled map from kan outputs to standardized tendencies still has singular values
-# from ~2.4 down to ~1e-3, so the kan had to output values in the hundreds along the weak directions. mixing through
-# V / sigma makes each of the 11 kan outputs that reach the loss move it along one orthonormal direction; the 2 null
-# directions keep unit weight and never touch the loss. S is still applied in ppb, so atoms balance as before.
+# gives every reaction a unit that moves the standardized loss equally
 def make_head(S, D_train, scaler_y, device, dtype, scaling="equal", positive=False):
     mix = None
     if scaling in ("equal", "whiten"):
@@ -119,10 +115,7 @@ def make_head(S, D_train, scaler_y, device, dtype, scaling="equal", positive=Fal
     return StoichHead(S, scale, scaler_y.mean_, scaler_y.scale_, device, dtype, positive, mix)
 
 
-# daniel getter's version: rather than a head after the kan, the kan's own last layer is fixed to S through pykan's
-# symbolic edges, so plot/prune/symbolic tools see the stoichiometry. edge (flux i -> species j) is c * x with the
-# same coefficients StoichHead uses, so both compute the same function; the coefficient sits in the edge's affine
-# slot under the library name "x" because a lambda saves as "anonymous" and loadckpt can't read it back.
+# daniel's version
 def fix_stoich_layer(model, head):
     L = model.depth - 1
     layer = model.symbolic_fun[L]
@@ -138,7 +131,7 @@ def fix_stoich_layer(model, head):
     freeze_stoich_layer(model)
 
 
-# refine() builds a fresh last layer with trainable splines (masked off, but still counted), so call this after it too.
+# refine() builds a fresh last layer with trainable splines
 def freeze_stoich_layer(model):
     L = model.depth - 1
     for p in list(model.act_fun[L].parameters()) + list(model.symbolic_fun[L].parameters()):
