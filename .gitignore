@@ -1,13 +1,34 @@
+# environment and caches
 .venv/
+__pycache__/
+*.pyc
+*.pyo
 .DS_Store
-.claude/
+
+# local data, too big for git
+/data/
+/model/
 *.npz
 *.csv
 *.save
-guide.md
-__pycache__/
-*.pyc
-*.pyo1
-model/
-data/
 *.pdf
+*.tgz
+
+# personal notes
+guide.md
+
+# per-edge spline pngs pykan writes while drawing a kan graph
+sp_*.png
+kan_edges/
+
+# generated per run; the summary pngs, config.json and metrics.json stay tracked
+kan_graph.png
+model_state
+model_cache_data
+model_config.yml
+
+# local run output
+logs/
+logs_preflight.txt
+runs/overnight/
+runs/preflight/
