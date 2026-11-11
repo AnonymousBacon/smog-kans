@@ -1,0 +1,49 @@
+# daniel's ask: does a kan whose last layer is fixed to S (stoich: symbolic, 13 nodes at L-1, frozen +-x edges)
+# give the same results as the same kan feeding StoichHead (stoich: true)? everything else is held equal: same
+# data split, same seeds, equal head scaling, no whitening, no softplus, and no grid refinement on this first pass.
+# U16_ref is the unconstrained reference. 5 runs fits one gpu.
+defaults:
+  width_hidden: [16, 16, 16]
+  grid: 3
+  k: 3
+  grid_eps: 0.0
+  grid_update_every: 10
+  grid_update_until: 50
+  grid_update_refine: false
+  lamb: 0.0
+  prune: false
+  prune_node_th: 1.0e-2
+  prune_edge_th: 3.0e-2
+  refine: []
+  steps: 1200
+  eval_every: 10
+  patience: 5
+  min_delta: 1.0e-3
+  n_exps: 10000
+  dtype: float32
+  seed: 42
+  transform: log10_floor
+  species_weights:
+    OH: 5
+  species: all16
+
+runs:
+  - name: U16_ref
+
+  - name: S13_head_s42
+    stoich: true
+    head_scale: equal
+
+  - name: S13_sym_s42
+    stoich: symbolic
+    head_scale: equal
+
+  - name: S13_head_s7
+    stoich: true
+    head_scale: equal
+    seed: 7
+
+  - name: S13_sym_s7
+    stoich: symbolic
+    head_scale: equal
+    seed: 7
