@@ -1,7 +1,7 @@
 # daniel's ask: does a kan whose last layer is fixed to S (stoich: symbolic, 13 nodes at L-1, frozen +-x edges)
 # give the same results as the same kan feeding StoichHead (stoich: true)? everything else is held equal: same
 # data split, same seeds, equal head scaling, no whitening, no softplus, and no grid refinement on this first pass.
-# U16_ref is the unconstrained reference. 5 runs fits one gpu.
+# U16_ref is the unconstrained reference. 7 runs, 3 at a time on one gpu.
 defaults:
   width_hidden: [16, 16, 16]
   grid: 3
@@ -47,3 +47,15 @@ runs:
     stoich: symbolic
     head_scale: equal
     seed: 7
+
+  # daniel's short-term ask: the fixed layer trained with no grid updates during training.
+  - name: S13_sym_s42_nogu
+    stoich: symbolic
+    head_scale: equal
+    grid_update_every: 0
+
+  # float64 so the atom residual can be judged against machine precision (~1e-15), not float32's ~1e-7.
+  - name: S13_sym_s42_f64
+    stoich: symbolic
+    head_scale: equal
+    dtype: float64
