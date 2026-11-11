@@ -1,3 +1,5 @@
+# how well can OH be predicted at all? steady-state and gradient-boosting checks on the same split as the kan.
+#   python analysis/analyze_oh.py [data/baseline_10k/baseline_10k.npz]   (run from the repo root)
 import json
 import os
 import sys

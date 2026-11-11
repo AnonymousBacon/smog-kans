@@ -62,7 +62,7 @@ EOF
     python stoich.py "$DATA" | tee /dev/stderr | grep -q " ok$" || die "stoich check"
     echo "== every run for 6 steps (catches config and data errors before the long runs)"
     rm -rf runs/preflight
-    python -u phase1.py --config "$CFG" --data "$DATA" --device $DEV --threads $THREADS \
+    python -u run_configs.py --config "$CFG" --data "$DATA" --device $DEV --threads $THREADS \
         --out runs/preflight --steps 6 > logs_preflight.txt 2>&1 \
         || { tail -30 logs_preflight.txt; die "a run failed, full log in logs_preflight.txt"; }
     grep -E "^=== |done:" logs_preflight.txt
@@ -84,7 +84,7 @@ lane() {
         echo "$(date '+%F %T') start $run (timeout $((secs / 60)) min)"
         # sigint lets the run stop training and still save its best checkpoint; kill only if saving hangs.
         timeout --signal=INT --kill-after=600 "$secs" \
-            python -u phase1.py --config "$CFG" --data "$DATA" --device $DEV --threads $THREADS \
+            python -u run_configs.py --config "$CFG" --data "$DATA" --device $DEV --threads $THREADS \
             --out "$OUT" --runs "$run" > "$LOGS/$run.log" 2>&1 < /dev/null
         local rc=$?
         if [ $rc -eq 0 ]; then echo "$(date '+%F %T') done $run"

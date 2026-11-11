@@ -64,7 +64,7 @@ will confirm or rule out each one with measurements.
 
 Everything else depends on runs being comparable and timed.
 
-- [x] **Config-driven runs.** One script, `phase1.py --config configs/<name>.yaml`,
+- [x] **Config-driven runs.** One script, `run_configs.py --config configs/<name>.yaml`,
       where the config sets: width, grid, k, lamb, prune on/off, refine grids, steps,
       n_exps, device, dtype, seed. Each run writes to `runs/<name>/`: config copy,
       loss history (MSE and reg logged separately), timings, final metrics.
@@ -76,7 +76,7 @@ Everything else depends on runs being comparable and timed.
 - [x] **Unfriendly data split.** Shuffled experiment-level train/val/test split, scalers
       fit on train only, checkpoints picked on val. The flag to reproduce the old
       sequential split was not added -- nothing has needed it yet. Superseded by
-      `phase1.py --data <npz>`, which takes the split from the prebuilt dataset instead
+      `run_configs.py --data <npz>`, which takes the split from the prebuilt dataset instead
       of re-deriving it; the seed-derived path is still there for the CSV.
 - [ ] **Mudd SLURM script** (`slurm/run_cpu.sbatch`) that runs one config on CPU, so CPU
       hours can be used as soon as they're approved.
@@ -132,7 +132,7 @@ all three, so 2A/2B numbers are not comparable with anything after them.
 
 `configs/deliverable.yaml` → `runs/deliverable/cpu/`, driven by
 
-    python phase1.py --config configs/deliverable.yaml \
+    python run_configs.py --config configs/deliverable.yaml \
         --data data/baseline_10k/baseline_10k.npz --out runs/deliverable
 
 Two models, identical except for the loss weights: `A_unreg` (plain MSE) and `B_oh60`

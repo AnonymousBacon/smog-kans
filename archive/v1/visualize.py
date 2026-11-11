@@ -1,4 +1,5 @@
 import os
+import tempfile
 import numpy as np
 import torch
 import matplotlib
@@ -113,8 +114,11 @@ def plot_kan_graph(model, dataset, species_names, n_species):
     max_label_len = max(len(s) for s in species_names)
     label_varscale = min(1.0, max(0.25, 19 / (n_species * max_label_len)))
     try:
-        model.plot(in_vars=species_names, out_vars=species_names, scale=1.0, varscale=label_varscale)
-        plt.savefig(cfg.GRAPH_PATH, dpi=200, bbox_inches="tight")
+        # pykan writes one png per spline edge to folder; a temp folder keeps them out of figures/.
+        with tempfile.TemporaryDirectory() as edges:
+            model.plot(folder=edges, in_vars=species_names, out_vars=species_names, scale=1.0,
+                       varscale=label_varscale)
+            plt.savefig(cfg.GRAPH_PATH, dpi=200, bbox_inches="tight")
         print(f"Saved KAN graph to {cfg.GRAPH_PATH}")
     except MemoryError as e:
         print(f"Skipped KAN graph: ran out of memory compositing it ({e}). "
