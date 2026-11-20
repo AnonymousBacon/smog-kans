@@ -115,20 +115,35 @@ def make_head(S, D_train, scaler_y, device, dtype, scaling="equal", positive=Fal
     return StoichHead(S, scale, scaler_y.mean_, scaler_y.scale_, device, dtype, positive, mix)
 
 
-# daniel's version
-def fix_stoich_layer(model, head):
+# fixes the last kan layer to out_j = sum_i M[j, i] * x_i + bias_j as frozen symbolic x edges.
+def fix_linear_layer(model, M, bias):
     L = model.depth - 1
     layer = model.symbolic_fun[L]
-    if (layer.in_dim, layer.out_dim) != tuple(head.S.T.shape):
-        raise ValueError(f"last layer is {layer.in_dim}->{layer.out_dim}, S needs {tuple(head.S.T.shape)}")
+    if (layer.out_dim, layer.in_dim) != tuple(M.shape):
+        raise ValueError(f"last layer is {layer.in_dim}->{layer.out_dim}, M is {tuple(M.shape)} (out, in)")
     for i in range(layer.in_dim):
         for j in range(layer.out_dim):
             model.fix_symbolic(L, i, j, "x", fit_params_bool=False, verbose=False, log_history=False)
     with torch.no_grad():
         # affine is (out, in, 4) holding a, b, c, d of c * f(a * x + b) + d.
-        layer.affine[:, :, 2] = (head.S * head.flux_scale[None, :]) @ head.mix / head.y_scale[:, None]
-        model.node_bias[L].copy_(-head.y_mean / head.y_scale)
+        layer.affine[:, :, 2] = torch.as_tensor(M, dtype=layer.affine.dtype, device=layer.affine.device)
+        model.node_bias[L].copy_(torch.as_tensor(bias, dtype=layer.affine.dtype, device=layer.affine.device))
     freeze_stoich_layer(model)
+
+
+# daniel's version: 13 flux nodes at L-1, last layer fixed to S in standardized units.
+def fix_stoich_layer(model, head):
+    fix_linear_layer(model, (head.S * head.flux_scale[None, :]) @ head.mix / head.y_scale[:, None],
+                     -head.y_mean / head.y_scale)
+
+
+# projection onto span(S) in standardized units, orthogonal in the loss metric diag(w)
+def projection_layer(S, scaler_y, w=None):
+    A = S / scaler_y.scale_[:, None]
+    w = np.ones(A.shape[0]) if w is None else np.asarray(w, dtype=float)
+    P = A @ np.linalg.pinv(A.T @ (w[:, None] * A)) @ A.T * w[None, :]
+    c = scaler_y.mean_ / scaler_y.scale_
+    return P, P @ c - c
 
 
 # refine() builds a fresh last layer with trainable splines

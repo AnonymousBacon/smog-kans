@@ -1,4 +1,6 @@
 import copy
+import os
+import re
 import time
 
 import numpy as np
@@ -15,6 +17,27 @@ def make_model(width, grid, k, seed, device, train_input, grid_eps=0.0, symbolic
     model.update_grid(train_input)
     model.save_act = False
     return model
+
+
+# copies every layer of a saved run (run_dir/model_state) into the matching layers of model. the model may have one
+# extra fixed last layer (projection or S), which is left as it is, or the same depth (continuing the same model).
+# shapes must match, so same width_hidden, grid and k; the source run must use the same data split and scaling.
+def warm_start(model, run_dir, device):
+    src = torch.load(os.path.join(run_dir, "model_state"), map_location=device, weights_only=False)
+    n_src = 1 + max(int(m.group(1) or m.group(2)) for k in src
+                    if (m := re.search(r"(?:act_fun|symbolic_fun)\.(\d+)\.|_(\d+)$", k)))
+    if n_src not in (model.depth - 1, model.depth):
+        raise ValueError(f"init_from has {n_src} layers, model has {model.depth} (same depth or one extra fixed layer)")
+    dst = model.state_dict()
+    copied = {}
+    for k, v in src.items():
+        m = re.search(r"(?:act_fun|symbolic_fun)\.(\d+)\.|_(\d+)$", k)
+        if m and int(m.group(1) or m.group(2)) < n_src and k in dst:
+            if dst[k].shape != v.shape:
+                raise ValueError(f"init_from {k}: {tuple(v.shape)} vs {tuple(dst[k].shape)}")
+            copied[k] = v.to(dst[k].dtype)
+    model.load_state_dict(copied, strict=False)
+    print(f"  warm start: copied {len(copied)} tensors from {run_dir} into layers 0..{n_src - 1}")
 
 
 def make_weights(species, weights, device, dtype):
@@ -146,6 +169,15 @@ def train_stage(model, ds, steps, lamb, eval_every, device, log, stage, grid_upd
         if gu_every and step % gu_every == 1 % gu_every and step <= gu_until:
             model.update_grid(x)
             opt = make_opt(model)
+            # daniel's sanity check: a fixed last layer must still have no trainable parameter after the update.
+            L = model.depth - 1
+            if bool(model.symbolic_fun[L].mask.any()):
+                live = [n for n, p in list(model.symbolic_fun[L].named_parameters())
+                        + list(model.act_fun[L].named_parameters())
+                        + [(f"{a}_{L}", getattr(model, a)[L]) for a in
+                           ("node_bias", "node_scale", "subnode_bias", "subnode_scale")] if p.requires_grad]
+                print(f"  [{stage}] grid update at step {step}: fixed last layer requires_grad "
+                      f"{'TRUE for ' + ', '.join(live) if live else 'False'}")
         opt.step(closure)
         sync(device)
         dt = time.perf_counter() - t0

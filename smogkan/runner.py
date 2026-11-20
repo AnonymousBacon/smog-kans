@@ -38,27 +38,35 @@ def run(rc, X, D, species, splits, device, out_dir):
     if w is not None:
         print("  species weights (mean-normalized): "
               + ", ".join(f"{s}={v:.3f}" for s, v in zip(species, w.tolist())))
-    # with stoich on, the last kan layer outputs one flux per reaction instead of one tendency per species.
-    # stoich: symbolic is daniel's version, where one more kan layer fixed to S replaces the head.
+    # stoich: true and symbolic make the kan's last trained layer output one flux per reaction, then apply S
+    # (true as StoichHead after the kan, symbolic as one more fixed kan layer, daniel's version).
+    # stoich: projection keeps 16 tendency outputs and adds one fixed 16->16 layer projecting them onto span(S).
     head, n_out = None, n_sp
-    symbolic = rc.get("stoich") == "symbolic"
+    mode = rc.get("stoich")
+    symbolic = mode in ("symbolic", "projection")
     if symbolic and (rc.get("flux_positive") or rc["prune"]):
-        raise ValueError("stoich: symbolic does not support flux_positive or prune")
-    if rc.get("stoich"):
+        raise ValueError(f"stoich: {mode} does not support flux_positive or prune")
+    if mode:
         S = stoich.stoich_matrix(species)
         D_train = D[rows_for(train_ids)]
         if not stoich.check_S(S, D_train, species):
             raise ValueError("stoichiometric matrix does not match the data, see check above")
-        head = stoich.make_head(S, D_train, scaler_y, device, dtype, rc.get("head_scale", "equal"),
-                                rc.get("flux_positive", False))
-        n_out = S.shape[1]
+        if mode != "projection":
+            head = stoich.make_head(S, D_train, scaler_y, device, dtype, rc.get("head_scale", "equal"),
+                                    rc.get("flux_positive", False))
+            n_out = S.shape[1]
     width = [n_sp] + list(rc["width_hidden"]) + [n_out] + ([n_sp] if symbolic else [])
     model = make_model(width, rc["grid"], rc["k"], rc["seed"], device, ds["train_input"],
                        rc.get("grid_eps", 0.0), symbolic)
     flux_head = head
-    if symbolic:
+    if mode == "projection":
+        P, bias = stoich.projection_layer(S, scaler_y, None if w is None else w.cpu().numpy())
+        stoich.fix_linear_layer(model, P, bias)
+    elif symbolic:
         stoich.fix_stoich_layer(model, head)
         head = None
+    if rc.get("init_from"):
+        training.warm_start(model, rc["init_from"], device)
     gu = (rc.get("grid_update_every", 0), rc.get("grid_update_until", 0))
     gu_refine = gu if rc.get("grid_update_refine", True) else (0, 0)
 
@@ -107,6 +115,13 @@ def run(rc, X, D, species, splits, device, out_dir):
     metrics = run_stats(rc, model, log, device, total_time)
     metrics["test_mse_scaled"] = float(np.mean((pred - ds["test_label"].cpu().numpy()) ** 2))
     metrics.update(test_scores(species, pred_ppb, true_ppb, rmse, r2, flux))
+    if mode == "projection":
+        # the fixed projection applied again in float64 to the last trained layer's outputs, so the atom residual
+        # shows the float64 floor instead of float32 roundoff. every other metric stays the float32 model's.
+        z = fluxes(model, ds["test_input"], True).cpu().numpy().astype(np.float64)
+        pred64_ppb = scaler_y.inverse_transform(z @ P.T + bias)
+        metrics["atom_residual_pred_f64"] = test_scores(species, pred64_ppb, true_ppb, rmse, r2)["atom_residual_pred"]
+        metrics["f64_max_abs_diff_ppb"] = float(np.abs(pred64_ppb - pred_ppb).max())
     metrics["dropped_exps"] = dropped
     metrics["grid_coverage"] = training.grid_coverage(model, ds["train_input"], symbolic)
     metrics["interrupted"] = training.INTERRUPTED

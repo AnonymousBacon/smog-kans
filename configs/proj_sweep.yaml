@@ -1,0 +1,70 @@
+# the true tendencies lie in span(S) (to 9e-9), and projecting the trained U16 onto span(S) keeps R2 0.995 and
+# OH 0.94 with atoms conserved to 1e-11, so the constraint costs no accuracy. the S layer trains slowly because
+# its coefficients stretch some directions ~1900x more than others. this batch tests well-conditioned versions:
+# P16 is U16 plus one fixed 16->16 layer projecting onto span(S) (stoich: projection), and S13_wh_sym keeps
+# daniel's 13 flux nodes with whitened coefficients. same data split and defaults as daniel_compare.
+# patience 10: min_delta is relative, and patience 5 cut S13_sym_s7 off on a plateau the head run later left.
+# S13_wh_sym keeps patience 5 so it compares cleanly with S13_sym_s42 from daniel_compare (whitening is the only change).
+# P16_warm and U16_cont need runs/daniel_compare/cuda/U16_ref/ (gitignored checkpoint) on the box; launch from the repo root.
+defaults:
+  width_hidden: [16, 16, 16]
+  grid: 3
+  k: 3
+  grid_eps: 0.0
+  grid_update_every: 10
+  grid_update_until: 50
+  grid_update_refine: false
+  lamb: 0.0
+  prune: false
+  prune_node_th: 1.0e-2
+  prune_edge_th: 3.0e-2
+  refine: []
+  steps: 1200
+  eval_every: 10
+  patience: 10
+  min_delta: 1.0e-3
+  n_exps: 10000
+  dtype: float32
+  seed: 42
+  transform: log10_floor
+  species_weights:
+    OH: 5
+  species: all16
+
+runs:
+  - name: P16_s42
+    stoich: projection
+
+  # seed spread for P16; daniel_compare has no U16 at seed 7, so compare it with P16_s42, not with U16.
+  - name: P16_s7
+    stoich: projection
+    seed: 7
+
+  # starts from the trained unconstrained model, so step 0 is already the projected U16 (val ~0.0016).
+  # grid updates off so the copied grids stay as trained.
+  - name: P16_warm
+    stoich: projection
+    init_from: runs/daniel_compare/cuda/U16_ref
+    steps: 300
+    grid_update_every: 0
+
+  # control for P16_warm: the unconstrained U16 continued for the same 300 steps with a fresh lbfgs history, since
+  # U16_ref was still improving at step 1200.
+  - name: U16_cont
+    init_from: runs/daniel_compare/cuda/U16_ref
+    steps: 300
+    grid_update_every: 0
+
+  # exploratory, daniel's suggestion: grid updates spread through training (steps 1, 201, ..., 1001) instead of every
+  # 10 up to 50, so it differs from P16_s42 in two ways. early stopping is held off while grid updates run, so it
+  # always runs all 1200 steps.
+  - name: P16_gu200
+    stoich: projection
+    grid_update_every: 200
+    grid_update_until: 1200
+
+  # daniel's layer, 13 nodes at L-1, with coefficients whitened so every direction is scaled equally.
+  - name: S13_wh_sym
+    stoich: symbolic
+    head_scale: whiten
+    patience: 5

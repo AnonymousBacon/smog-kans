@@ -1,0 +1,39 @@
+# the final p16 batch: proj_sweep showed u16 plus a fixed projection onto span(S) beats unconstrained u16 on both seeds
+# (r2 0.997-0.998, oh 0.967-0.980) with atoms conserved, and val was still falling at step 1200. same settings as
+# P16_s42 in proj_sweep, longer, over 5 seeds. metrics also report the atom residual with the projection in float64.
+defaults:
+  width_hidden: [16, 16, 16]
+  grid: 3
+  k: 3
+  grid_eps: 0.0
+  grid_update_every: 10
+  grid_update_until: 50
+  grid_update_refine: false
+  lamb: 0.0
+  prune: false
+  prune_node_th: 1.0e-2
+  prune_edge_th: 3.0e-2
+  refine: []
+  steps: 3000
+  eval_every: 10
+  patience: 10
+  min_delta: 1.0e-3
+  n_exps: 10000
+  dtype: float32
+  seed: 42
+  transform: log10_floor
+  species_weights:
+    OH: 5
+  species: all16
+  stoich: projection
+
+runs:
+  - name: P16_long_s42
+  - name: P16_long_s7
+    seed: 7
+  - name: P16_long_s1
+    seed: 1
+  - name: P16_long_s2
+    seed: 2
+  - name: P16_long_s3
+    seed: 3
